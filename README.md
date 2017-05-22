@@ -24,4 +24,4 @@ go get github.com/kpango/gache
 [kpango](https://github.com/kpango)
 
 ## LICENSE
-httgo released under MIT license, refer [LICENSE](https://github.com/kpango/gache/blob/master/LICENSE) file.
+gache released under MIT license, refer [LICENSE](https://github.com/kpango/gache/blob/master/LICENSE) file.
