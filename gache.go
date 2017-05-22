@@ -18,7 +18,14 @@ type Cache struct {
 	defaultExpire time.Duration
 }
 
-type CacheData struct {
+type ServerCache struct {
+	Expire time.Time
+	Status int
+	Header http.Header
+	Body   []byte
+}
+
+type ClientCache struct {
 	Etag         string
 	Expire       time.Time
 	LastModified string
@@ -57,38 +64,69 @@ func (c *Cache) SetDefauleExpite(ex time.Duration) *Cache {
 	return c
 }
 
-func Get(key *http.Request) (*CacheData, bool) {
-	return GetCache().Get(key)
+func SGet(key *http.Request) (*ServerCache, bool) {
+	return GetCache().getServerCache(key)
 }
 
-func Set(key *http.Request, val *http.Response) error {
-	return GetCache().Set(key, val)
+func SSet(key *http.Request, status int, header http.Header, body []byte) error {
+	return GetCache().setServerCache(key, status, header, body)
 }
 
-func (c *Cache) Get(key *http.Request) (*CacheData, bool) {
+func CGet(key *http.Request) (*ClientCache, bool) {
+	return GetCache().getClientCache(key)
+}
+
+func CSet(key *http.Request, val *http.Response) error {
+	return GetCache().setClientCache(key, val)
+}
+
+func (c *Cache) getServerCache(key *http.Request) (*ServerCache, bool) {
 	data, ok := c.Data.Load(key)
-	if !ok || !time.Now().Before(data.(CacheData).Expire) {
+
+	if !ok || !time.Now().Before(data.(*ServerCache).Expire) {
 		c.Data.Delete(key)
 		return nil, false
 	}
-	return data.(*CacheData), true
+
+	return data.(*ServerCache), true
 }
 
-func (c *Cache) Set(key *http.Request, val *http.Response) error {
+func (c *Cache) setServerCache(key *http.Request, status int, header http.Header, body []byte) error {
 	data, ok := c.Data.Load(key)
-	if ok && time.Now().Before(data.(CacheData).Expire) {
+
+	if ok && time.Now().Before(data.(*ServerCache).Expire) {
+		return errors.New("cache already exists")
+	}
+
+	c.Data.Store(key, &ServerCache{
+		Expire: time.Now().Add(c.defaultExpire),
+		Status: status,
+		Header: header,
+		Body:   body,
+	})
+
+	return nil
+}
+
+func (c *Cache) getClientCache(key *http.Request) (*ClientCache, bool) {
+	data, ok := c.Data.Load(key)
+	if !ok || !time.Now().Before(data.(ClientCache).Expire) {
+		c.Data.Delete(key)
+		return nil, false
+	}
+	return data.(*ClientCache), true
+}
+
+func (c *Cache) setClientCache(key *http.Request, val *http.Response) error {
+	data, ok := c.Data.Load(key)
+	if ok && time.Now().Before(data.(ClientCache).Expire) {
 		return errors.New("")
 	}
 
 	cache, err := createHTTPCache(val)
 
 	if err != nil {
-		t := time.Now().Add(c.defaultExpire)
-		cache = &CacheData{
-			Res:          val,
-			Expire:       t,
-			LastModified: t.String(),
-		}
+		return err
 	}
 
 	c.Data.Store(key, cache)
@@ -104,7 +142,7 @@ func (c *Cache) Clear() {
 	c.Data = nil
 }
 
-func createHTTPCache(res *http.Response) (*CacheData, error) {
+func createHTTPCache(res *http.Response) (*ClientCache, error) {
 
 	header := res.Header.Get("Cache-Control")
 	if len(header) == 0 {
@@ -137,7 +175,7 @@ func createHTTPCache(res *http.Response) (*CacheData, error) {
 		return nil, err
 	}
 
-	return &CacheData{
+	return &ClientCache{
 		LastModified: res.Header.Get("Last-Modified"),
 		Etag:         res.Header.Get("ETag"),
 		Expire:       time.Now().Add(time.Duration(t) * time.Second),
