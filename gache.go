@@ -13,6 +13,7 @@ import (
 )
 
 type Cache struct {
+	mu            sync.RWMutex
 	Data          *syncmap.Map
 	defaultExpire time.Duration
 }
@@ -24,12 +25,20 @@ type CacheData struct {
 	Res          *http.Response
 }
 
+const (
+	defaultExpire = time.Second * 30
+)
+
 var (
 	instance *Cache
 	once     sync.Once
 
 	cacheRegex = regexp.MustCompile(`([a-zA-Z][a-zA-Z_-]*)\s*(?:=(?:"([^"]*)"|([^ \t",;]*)))?`)
 )
+
+func init() {
+	instance = GetCache().SetDefauleExpite(defaultExpire)
+}
 
 func GetCache() *Cache {
 	once.Do(func() {
@@ -42,8 +51,18 @@ func GetCache() *Cache {
 }
 
 func (c *Cache) SetDefauleExpite(ex time.Duration) *Cache {
+	defer c.mu.Unlock()
+	c.mu.Lock()
 	c.defaultExpire = ex
 	return c
+}
+
+func Get(key *http.Request) (*CacheData, bool) {
+	return GetCache().Get(key)
+}
+
+func Set(key *http.Request, val *http.Response) error {
+	return GetCache().Set(key, val)
 }
 
 func (c *Cache) Get(key *http.Request) (*CacheData, bool) {
