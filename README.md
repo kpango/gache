@@ -10,7 +10,53 @@ go get github.com/kpango/gache
 ```
 
 ## Example
+### Server-Side Cache Example
 ```go
+func handler(w http.ResponseWriter, r *http.Request) {
+
+	sc, ok := gache.SGet(r) // get server side cache
+
+	if ok {
+		w.WriteHeader(sc.Status)
+		w.Write(sc.Body)
+		return
+	}
+
+	var body []byte
+
+	/**
+	*  do something
+	*/
+
+	go func() {
+		err := gache.SSet(r, http.StatusOK, nil, body) // set server side cache
+		if err != nil {
+			log.Println(err)
+		}
+	}()
+
+	w.Write(body)
+}
+```
+
+### Client-Side Cache Example
+```go
+	req, err := http.NewRequest(http.MethodGet, "https://github.com/kpango/gache", nil)
+
+	if err != nil{
+		// some err handling
+	}
+
+	var res *http.Response
+
+	cache, ok := gache.CGet(r)
+
+	if ok {
+		res = cache.Res
+	}else{
+		res, err = http.DefaultClient.Do(req)
+	}
+
 ```
 
 ## Contribution
