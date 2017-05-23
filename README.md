@@ -49,12 +49,13 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	var res *http.Response
 
-	cache, ok := gache.CGet(r)
+	cache, ok := gache.CGet(req)
 
 	if ok {
 		res = cache.Res
 	}else{
 		res, err = http.DefaultClient.Do(req)
+		err = gache.CSet(req, res)
 	}
 
 ```
