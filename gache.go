@@ -18,8 +18,12 @@ type Cache struct {
 	defaultExpire time.Duration
 }
 
+type value struct {
+	expire time.Time
+	val    interface{}
+}
+
 type ServerCache struct {
-	Expire time.Time
 	Status int
 	Header http.Header
 	Body   []byte
@@ -44,7 +48,49 @@ var (
 )
 
 func init() {
-	instance = GetCache().SetDefauleExpite(defaultExpire)
+	instance = GetCache().SetDefauleExpire(defaultExpire)
+}
+
+func Get(key interface{}) (interface{}, bool) {
+	return instance.get(key)
+}
+
+func (c *Cache) get(key interface{}) (interface{}, bool) {
+	v, ok := c.Data.Load(key)
+
+	if !ok {
+		return nil, false
+	}
+
+	if v == nil || !time.Now().Before(v.(value).expire) {
+		c.Data.Delete(key)
+		return nil, false
+	}
+
+	return v.(value).val, true
+}
+
+func SetWithExpire(key, value interface{}, expire time.Duration) bool {
+	return instance.set(key, value, expire)
+}
+
+func Set(key, value interface{}) bool {
+	return instance.set(key, value, instance.defaultExpire)
+}
+
+func (c *Cache) set(key, val interface{}, expire time.Duration) bool {
+	v, ok := c.Data.Load(key)
+
+	if ok && time.Now().Before(v.(value).expire) {
+		return false
+	}
+
+	c.Data.Store(key, value{
+		expire: time.Now().Add(expire),
+		val:    val,
+	})
+
+	return true
 }
 
 func GetCache() *Cache {
@@ -57,7 +103,7 @@ func GetCache() *Cache {
 	return instance
 }
 
-func (c *Cache) SetDefauleExpite(ex time.Duration) *Cache {
+func (c *Cache) SetDefauleExpire(ex time.Duration) *Cache {
 	defer c.mu.Unlock()
 	c.mu.Lock()
 	c.defaultExpire = ex
@@ -65,62 +111,61 @@ func (c *Cache) SetDefauleExpite(ex time.Duration) *Cache {
 }
 
 func SGet(key *http.Request) (*ServerCache, bool) {
-	return GetCache().getServerCache(key)
+	return instance.getServerCache(key)
+}
+
+func SSetWithExpire(key *http.Request, status int, header http.Header, body []byte, expire time.Duration) error {
+	return instance.setServerCache(key, status, header, body, expire)
 }
 
 func SSet(key *http.Request, status int, header http.Header, body []byte) error {
-	return GetCache().setServerCache(key, status, header, body)
+	return instance.setServerCache(key, status, header, body, instance.defaultExpire)
 }
 
 func CGet(key *http.Request) (*ClientCache, bool) {
-	return GetCache().getClientCache(key)
+	return instance.getClientCache(key)
 }
 
 func CSet(key *http.Request, val *http.Response) error {
-	return GetCache().setClientCache(key, val)
+	return instance.setClientCache(key, val)
 }
 
 func (c *Cache) getServerCache(key *http.Request) (*ServerCache, bool) {
-	data, ok := c.Data.Load(key)
-
-	if !ok || !time.Now().Before(data.(*ServerCache).Expire) {
-		c.Data.Delete(key)
+	cache, ok := c.get(key)
+	if !ok {
 		return nil, false
 	}
-
-	return data.(*ServerCache), true
+	return cache.(value).val.(*ServerCache), ok
 }
 
-func (c *Cache) setServerCache(key *http.Request, status int, header http.Header, body []byte) error {
-	data, ok := c.Data.Load(key)
+func (c *Cache) setServerCache(key *http.Request, status int, header http.Header, body []byte, expire time.Duration) error {
 
-	if ok && time.Now().Before(data.(*ServerCache).Expire) {
+	_, ok := c.get(key)
+	if ok {
 		return errors.New("cache already exists")
 	}
 
-	c.Data.Store(key, &ServerCache{
-		Expire: time.Now().Add(c.defaultExpire),
+	c.set(key, &ServerCache{
 		Status: status,
 		Header: header,
 		Body:   body,
-	})
+	}, expire)
 
 	return nil
 }
 
 func (c *Cache) getClientCache(key *http.Request) (*ClientCache, bool) {
-	data, ok := c.Data.Load(key)
-	if !ok || !time.Now().Before(data.(ClientCache).Expire) {
-		c.Data.Delete(key)
+	data, ok := c.get(key)
+	if !ok {
 		return nil, false
 	}
-	return data.(*ClientCache), true
+	return data.(value).val.(*ClientCache), true
 }
 
 func (c *Cache) setClientCache(key *http.Request, val *http.Response) error {
-	data, ok := c.Data.Load(key)
-	if ok && time.Now().Before(data.(ClientCache).Expire) {
-		return errors.New("")
+	_, ok := c.getClientCache(key)
+	if ok {
+		return errors.New("cache already exists")
 	}
 
 	cache, err := createHTTPCache(val)
@@ -129,7 +174,7 @@ func (c *Cache) setClientCache(key *http.Request, val *http.Response) error {
 		return err
 	}
 
-	c.Data.Store(key, cache)
+	c.set(key, cache, cache.Expire.Sub(time.Now()))
 
 	return nil
 }

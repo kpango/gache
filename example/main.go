@@ -6,10 +6,11 @@ import (
 	"net/http"
 
 	"github.com/kpango/gache"
+	"github.com/kpango/glog"
 )
 
 func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	http.Handle("/", glog.HTTPLogger("sample", func(w http.ResponseWriter, r *http.Request) {
 
 		sc, ok := gache.SGet(r) // get server side cache
 
@@ -61,5 +62,7 @@ func main() {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write(b)
-	})
+	}))
+
+	http.ListenAndServe(":9090", nil)
 }
