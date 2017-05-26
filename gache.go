@@ -13,7 +13,6 @@ import (
 )
 
 type Cache struct {
-	mu            sync.RWMutex
 	Data          *syncmap.Map
 	defaultExpire time.Duration
 }
@@ -103,13 +102,6 @@ func GetCache() *Cache {
 	return instance
 }
 
-func (c *Cache) SetDefauleExpire(ex time.Duration) *Cache {
-	defer c.mu.Unlock()
-	c.mu.Lock()
-	c.defaultExpire = ex
-	return c
-}
-
 func SGet(key *http.Request) (*ServerCache, bool) {
 	return instance.getServerCache(key)
 }
@@ -145,11 +137,13 @@ func (c *Cache) setServerCache(key *http.Request, status int, header http.Header
 		return errors.New("cache already exists")
 	}
 
-	c.set(key, &ServerCache{
+	if !c.set(key, &ServerCache{
 		Status: status,
 		Header: header,
 		Body:   body,
-	}, expire)
+	}, expire) {
+		return errors.New("cache already exists")
+	}
 
 	return nil
 }
@@ -174,7 +168,9 @@ func (c *Cache) setClientCache(key *http.Request, val *http.Response) error {
 		return err
 	}
 
-	c.set(key, cache, cache.Expire.Sub(time.Now()))
+	if !c.set(key, cache, cache.Expire.Sub(time.Now())) {
+		return errors.New("cache already exists")
+	}
 
 	return nil
 }
