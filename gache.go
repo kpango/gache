@@ -13,6 +13,7 @@ import (
 )
 
 type Cache struct {
+	mu            *sync.RWMutex
 	Data          *syncmap.Map
 	defaultExpire time.Duration
 }
@@ -48,6 +49,13 @@ var (
 
 func init() {
 	instance = GetCache().SetDefauleExpire(defaultExpire)
+}
+
+func (c *Cache) SetDefauleExpire(ex time.Duration) *Cache {
+	defer c.mu.Unlock()
+	c.mu.Lock()
+	c.defaultExpire = ex
+	return c
 }
 
 func Get(key interface{}) (interface{}, bool) {
@@ -95,6 +103,7 @@ func (c *Cache) set(key, val interface{}, expire time.Duration) bool {
 func GetCache() *Cache {
 	once.Do(func() {
 		instance = &Cache{
+			mu:            new(sync.RWMutex),
 			Data:          new(syncmap.Map),
 			defaultExpire: time.Second * 30,
 		}
