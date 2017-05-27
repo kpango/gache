@@ -48,7 +48,7 @@ var (
 )
 
 func init() {
-	instance = GetCache().SetDefauleExpire(defaultExpire)
+	instance = GetCache().SetDefaultExpire(defaultExpire)
 }
 
 func (c *Cache) SetDefaultExpire(ex time.Duration) *Cache {
