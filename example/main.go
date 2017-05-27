@@ -46,7 +46,7 @@ func simpleExample() {
 	gache.Set(key3, value1)
 
 	// set gache default expire time
-	gache.SetDefaultExpire(time.Second * 10)
+	gache.GetCache().SetDefaultExpire(time.Second * 10)
 
 	// store with expire setting
 	gache.SetWithExpire(key1, value3, time.Second*30)
@@ -111,6 +111,13 @@ func httpClientExample() *http.Response {
 
 	// if cached data already exist, return cached data
 	if ok {
+		/*
+			sc contains the following members
+				Etag         string
+				Expire       time.Time
+				LastModified string
+				Res          *http.Response
+		*/
 		return cc.Res
 	} else {
 		res, err = http.DefaultClient.Do(req)
