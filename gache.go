@@ -51,7 +51,7 @@ func init() {
 	instance = GetCache().SetDefauleExpire(defaultExpire)
 }
 
-func (c *Cache) SetDefauleExpire(ex time.Duration) *Cache {
+func (c *Cache) SetDefaultExpire(ex time.Duration) *Cache {
 	defer c.mu.Unlock()
 	c.mu.Lock()
 	c.defaultExpire = ex

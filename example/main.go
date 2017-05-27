@@ -14,6 +14,23 @@ func main() {
 	/**
 	simple cache example
 	*/
+	simpleExample()
+
+	/**
+	server side handler cache example
+	*/
+	http.Handle("/", glog.HTTPLogger("sample", httpServerExample))
+
+	/**
+	http client side cache example
+	*/
+	httpClientExample()
+
+	http.ListenAndServe(":9090", nil)
+}
+
+//	simple cache example
+func simpleExample() {
 	var (
 		key1 = "key"
 		key2 = 5050
@@ -40,18 +57,6 @@ func main() {
 	gache.Get(key1)
 	gache.Get(key2)
 	gache.Get(key3)
-
-	/**
-	server side handler cache example
-	*/
-	http.Handle("/", glog.HTTPLogger("sample", httpServerExample))
-
-	/**
-	http client side cache example
-	*/
-	httpClientExample()
-
-	http.ListenAndServe(":9090", nil)
 }
 
 // httpServerExample is server side handler cache example
