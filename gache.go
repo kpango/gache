@@ -2,6 +2,7 @@ package gache
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -12,87 +13,124 @@ import (
 	"golang.org/x/sync/syncmap"
 )
 
-type Cache struct {
-	mu            *sync.RWMutex
-	Data          *syncmap.Map
-	defaultExpire time.Duration
-}
+type (
+	Gache struct {
+		mu     *sync.RWMutex
+		data   *syncmap.Map
+		expire time.Duration
+	}
 
-type value struct {
-	expire time.Time
-	val    interface{}
-}
+	value struct {
+		expire time.Time
+		val    interface{}
+	}
 
-type ServerCache struct {
-	Status int
-	Header http.Header
-	Body   []byte
-}
+	ServerCache struct {
+		Status int
+		Header http.Header
+		Body   []byte
+	}
 
-type ClientCache struct {
-	Etag         string
-	Expire       time.Time
-	LastModified string
-	Res          *http.Response
-}
-
-const (
-	defaultExpire = time.Second * 30
+	ClientCache struct {
+		Etag         string
+		Expire       time.Time
+		LastModified string
+		Res          *http.Response
+	}
 )
 
 var (
-	instance *Cache
+	instance *Gache
 	once     sync.Once
 
 	cacheRegex = regexp.MustCompile(`([a-zA-Z][a-zA-Z_-]*)\s*(?:=(?:"([^"]*)"|([^ \t",;]*)))?`)
 )
 
 func init() {
-	instance = GetCache().SetDefaultExpire(defaultExpire)
+	GetGache()
 }
 
-func (c *Cache) SetDefaultExpire(ex time.Duration) *Cache {
-	defer c.mu.Unlock()
-	c.mu.Lock()
-	c.defaultExpire = ex
-	return c
+func New() *Gache {
+	return &Gache{
+		mu:     new(sync.RWMutex),
+		data:   new(syncmap.Map),
+		expire: time.Second * 30,
+	}
+}
+
+func GetGache() *Gache {
+	once.Do(func() {
+		instance = New()
+	})
+	return instance
+}
+
+func (v value) isValid() bool {
+	return time.Now().Before(v.expire)
+}
+
+func (g *Gache) SetDefaultExpire(ex time.Duration) *Gache {
+	defer g.mu.Unlock()
+	g.mu.Lock()
+	g.expire = ex
+	return g
+}
+
+func SetDefaultExpire(ex time.Duration) {
+	defer instance.mu.Unlock()
+	instance.mu.Lock()
+	instance.expire = ex
 }
 
 func Get(key interface{}) (interface{}, bool) {
 	return instance.get(key)
 }
 
-func (c *Cache) get(key interface{}) (interface{}, bool) {
-	v, ok := c.Data.Load(key)
+func (g *Gache) Get(key interface{}) (interface{}, bool) {
+	return g.get(key)
+}
 
-	if !ok {
+func (g *Gache) get(key interface{}) (interface{}, bool) {
+
+	v, ok := g.data.Load(key)
+
+	if !ok || v == nil {
 		return nil, false
 	}
 
-	if v == nil || !time.Now().Before(v.(value).expire) {
-		c.Data.Delete(key)
+	if !v.(value).isValid() {
+		g.data.Delete(key)
 		return nil, false
 	}
 
 	return v.(value).val, true
 }
 
-func SetWithExpire(key, value interface{}, expire time.Duration) bool {
-	return instance.set(key, value, expire)
+func SetWithExpire(key, val interface{}, expire time.Duration) bool {
+	return instance.set(key, val, expire)
 }
 
-func Set(key, value interface{}) bool {
-	return instance.set(key, value, instance.defaultExpire)
+func Set(key, val interface{}) bool {
+	return instance.set(key, val, instance.expire)
 }
 
-func (c *Cache) set(key, val interface{}, expire time.Duration) bool {
-	v, ok := c.Data.Load(key)
+func (g *Gache) SetWithExpire(key, val interface{}, expire time.Duration) bool {
+	return g.set(key, val, expire)
+}
 
-	if ok && time.Now().Before(v.(value).expire) {
+func (g *Gache) Set(key, val interface{}) bool {
+	return g.set(key, val, g.expire)
+}
+
+func (g *Gache) set(key, val interface{}, expire time.Duration) bool {
+
+	v, ok := g.data.Load(key)
+
+	if ok && v.(value).isValid() {
 		return false
 	}
 
-	c.Data.Store(key, value{
+	g.data.Store(key, value{
 		expire: time.Now().Add(expire),
 		val:    val,
 	})
@@ -100,15 +138,24 @@ func (c *Cache) set(key, val interface{}, expire time.Duration) bool {
 	return true
 }
 
-func GetCache() *Cache {
-	once.Do(func() {
-		instance = &Cache{
-			mu:            new(sync.RWMutex),
-			Data:          new(syncmap.Map),
-			defaultExpire: time.Second * 30,
-		}
-	})
-	return instance
+func (g *Gache) SGet(key *http.Request) (*ServerCache, bool) {
+	return g.getServerCache(key)
+}
+
+func (g *Gache) SSetWithExpire(key *http.Request, status int, header http.Header, body []byte, expire time.Duration) error {
+	return g.setServerCache(key, status, header, body, expire)
+}
+
+func (g *Gache) SSet(key *http.Request, status int, header http.Header, body []byte) error {
+	return g.setServerCache(key, status, header, body, g.expire)
+}
+
+func (g *Gache) CGet(key *http.Request) (*ClientCache, bool) {
+	return g.getClientCache(key)
+}
+
+func (g *Gache) CSet(key *http.Request, val *http.Response) error {
+	return g.setClientCache(key, val)
 }
 
 func SGet(key *http.Request) (*ServerCache, bool) {
@@ -120,7 +167,7 @@ func SSetWithExpire(key *http.Request, status int, header http.Header, body []by
 }
 
 func SSet(key *http.Request, status int, header http.Header, body []byte) error {
-	return instance.setServerCache(key, status, header, body, instance.defaultExpire)
+	return instance.setServerCache(key, status, header, body, instance.expire)
 }
 
 func CGet(key *http.Request) (*ClientCache, bool) {
@@ -131,22 +178,25 @@ func CSet(key *http.Request, val *http.Response) error {
 	return instance.setClientCache(key, val)
 }
 
-func (c *Cache) getServerCache(key *http.Request) (*ServerCache, bool) {
-	cache, ok := c.get(key)
+func (g *Gache) getServerCache(req *http.Request) (*ServerCache, bool) {
+	key := generateHTTPKey(req)
+	cache, ok := g.get(key)
 	if !ok {
 		return nil, false
 	}
-	return cache.(value).val.(*ServerCache), ok
+	return cache.(*ServerCache), ok
 }
 
-func (c *Cache) setServerCache(key *http.Request, status int, header http.Header, body []byte, expire time.Duration) error {
+func (g *Gache) setServerCache(req *http.Request, status int, header http.Header, body []byte, expire time.Duration) error {
 
-	_, ok := c.get(key)
+	key := generateHTTPKey(req)
+
+	_, ok := g.get(key)
 	if ok {
 		return errors.New("cache already exists")
 	}
 
-	if !c.set(key, &ServerCache{
+	if !g.set(key, &ServerCache{
 		Status: status,
 		Header: header,
 		Body:   body,
@@ -157,16 +207,18 @@ func (c *Cache) setServerCache(key *http.Request, status int, header http.Header
 	return nil
 }
 
-func (c *Cache) getClientCache(key *http.Request) (*ClientCache, bool) {
-	data, ok := c.get(key)
+func (g *Gache) getClientCache(req *http.Request) (*ClientCache, bool) {
+	key := generateHTTPKey(req)
+	data, ok := g.get(key)
 	if !ok {
 		return nil, false
 	}
-	return data.(value).val.(*ClientCache), true
+	return data.(*ClientCache), true
 }
 
-func (c *Cache) setClientCache(key *http.Request, val *http.Response) error {
-	_, ok := c.getClientCache(key)
+func (g *Gache) setClientCache(req *http.Request, val *http.Response) error {
+	key := generateHTTPKey(req)
+	_, ok := g.get(key)
 	if ok {
 		return errors.New("cache already exists")
 	}
@@ -177,19 +229,27 @@ func (c *Cache) setClientCache(key *http.Request, val *http.Response) error {
 		return err
 	}
 
-	if !c.set(key, cache, cache.Expire.Sub(time.Now())) {
+	if !g.set(key, cache, cache.Expire.Sub(time.Now())) {
 		return errors.New("cache already exists")
 	}
 
 	return nil
 }
 
-func (c *Cache) Clear() {
-	c.Data.Range(func(key, val interface{}) bool {
-		c.Data.Delete(key)
+func (g *Gache) Clear() {
+	g.data.Range(func(key, val interface{}) bool {
+		g.data.Delete(key)
 		return true
 	})
-	c.Data = nil
+	g.data = nil
+}
+
+func Clear() {
+	instance.Clear()
+}
+
+func generateHTTPKey(r *http.Request) string {
+	return fmt.Sprintf("%s%s%s%s%s%s%v", r.RequestURI, r.RemoteAddr, r.Proto, r.UserAgent(), r.Host, r.Method, r.Body)
 }
 
 func createHTTPCache(res *http.Response) (*ClientCache, error) {
