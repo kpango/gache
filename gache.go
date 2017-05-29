@@ -40,9 +40,8 @@ type (
 )
 
 var (
-	instance *Gache
-	once     sync.Once
-
+	instance   *Gache
+	once       sync.Once
 	cacheRegex = regexp.MustCompile(`([a-zA-Z][a-zA-Z_-]*)\s*(?:=(?:"([^"]*)"|([^ \t",;]*)))?`)
 )
 
@@ -180,10 +179,13 @@ func CSet(key *http.Request, val *http.Response) error {
 
 func (g *Gache) getServerCache(req *http.Request) (*ServerCache, bool) {
 	key := generateHTTPKey(req)
+
 	cache, ok := g.get(key)
+
 	if !ok {
 		return nil, false
 	}
+
 	return cache.(*ServerCache), ok
 }
 
@@ -249,7 +251,11 @@ func Clear() {
 }
 
 func generateHTTPKey(r *http.Request) string {
-	return fmt.Sprintf("%s%s%s%s%s%s%v", r.RequestURI, r.RemoteAddr, r.Proto, r.UserAgent(), r.Host, r.Method, r.Body)
+	key := fmt.Sprintf("%s%s%s%s%v", r.RequestURI, r.Proto, r.Host, r.Method, r.Body)
+	for _, v := range r.Cookies() {
+		key += v.String()
+	}
+	return key
 }
 
 func createHTTPCache(res *http.Response) (*ClientCache, error) {
@@ -259,30 +265,16 @@ func createHTTPCache(res *http.Response) (*ClientCache, error) {
 		return nil, errors.New("Cache-Control Header Not Found")
 	}
 
-	cache := make(map[string]string)
+	header = strings.Trim(header, " ")
 
-	for _, match := range cacheRegex.Copy().FindAllString(header, -1) {
-		if strings.EqualFold(match, "no-store") {
-			return nil, errors.New("no-store detected")
-		}
-		var key, value string
-		key = match
-		if index := strings.Index(match, "="); index != -1 {
-			key, value = match[:index], match[index+1:]
-		}
-		cache[key] = value
+	if strings.Contains(header, "no-store") || !strings.Contains(header, "max-age") {
+		return nil, errors.New("cache disabled")
 	}
 
-	limit, ok := cache["max-age"]
-
-	if !ok {
-		return nil, errors.New("cache age not found")
-	}
-
-	t, err := strconv.Atoi(limit)
+	t, err := strconv.Atoi(strings.Split(strings.Split(header, "max-age=")[1], ",")[0])
 
 	if err != nil {
-		return nil, err
+		return nil, errors.New("Invalid max-age format")
 	}
 
 	return &ClientCache{

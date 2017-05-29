@@ -104,6 +104,7 @@ func httpServerExample(w http.ResponseWriter, r *http.Request) {
 	var body []byte
 
 	// TODO: do something
+	body = []byte("Hello gache Cache Sample")
 
 	// store the response data to cache
 	go func() {
