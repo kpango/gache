@@ -19,7 +19,7 @@ func main() {
 	/**
 	server side handler cache example
 	*/
-	http.Handle("/", glog.HTTPLogger("sample", httpServerExample))
+	http.Handle("/", glog.HTTPLoggerFunc("sample", httpServerExample))
 
 	/**
 	http client side cache example

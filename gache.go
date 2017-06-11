@@ -22,7 +22,7 @@ type (
 
 	value struct {
 		expire time.Time
-		val    interface{}
+		val    *interface{}
 	}
 
 	ServerCache struct {
@@ -93,16 +93,18 @@ func (g *Gache) get(key interface{}) (interface{}, bool) {
 
 	v, ok := g.data.Load(key)
 
-	if !ok || v == nil {
+	if !ok {
 		return nil, false
 	}
 
-	if !v.(value).isValid() {
+	d, ok := v.(*value)
+
+	if !ok || !d.isValid() {
 		g.data.Delete(key)
 		return nil, false
 	}
 
-	return v.(value).val, true
+	return *d.val, true
 }
 
 func SetWithExpire(key, val interface{}, expire time.Duration) bool {
@@ -122,16 +124,9 @@ func (g *Gache) Set(key, val interface{}) bool {
 }
 
 func (g *Gache) set(key, val interface{}, expire time.Duration) bool {
-
-	v, ok := g.data.Load(key)
-
-	if ok && v.(value).isValid() {
-		return false
-	}
-
-	g.data.Store(key, value{
+	g.data.Store(key, &value{
 		expire: time.Now().Add(expire),
-		val:    val,
+		val:    &val,
 	})
 
 	return true
