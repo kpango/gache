@@ -86,6 +86,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 ```
 
+## Benchmarks
+
+![Bench](https://github.com/kpango/gache/raw/master/images/bench.png)
+
 ## Contribution
 1. Fork it ( https://github.com/kpango/gache/fork )
 2. Create your feature branch (git checkout -b my-new-feature)
