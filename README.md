@@ -10,6 +10,32 @@ go get github.com/kpango/gache
 ```
 
 ## Example
+### Common Cache Example
+```go
+	// data sets
+	var (
+		key1 = "key"
+		key2 = 5050
+		key3 = struct{}{}
+
+		value1 = "value"
+		value2 = 88888
+		value3 = struct{}{}
+	)
+
+	// store cache default expire is 30 Seconds
+	gache.Set(key1, value3)
+	gache.Set(key2, value2)
+	gache.Set(key3, value1)
+
+	// load cache data
+	v1, ok := gache.Get(key1)
+
+	v2, ok := gache.Get(key2)
+
+	v3, ok := gache.Get(key3)
+
+```
 ### Server-Side Cache Example
 ```go
 func handler(w http.ResponseWriter, r *http.Request) {
