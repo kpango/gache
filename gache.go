@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,9 +39,8 @@ type (
 )
 
 var (
-	instance   *Gache
-	once       sync.Once
-	cacheRegex = regexp.MustCompile(`([a-zA-Z][a-zA-Z_-]*)\s*(?:=(?:"([^"]*)"|([^ \t",;]*)))?`)
+	gache *Gache
+	once  sync.Once
 )
 
 func init() {
@@ -59,9 +57,9 @@ func New() *Gache {
 
 func GetGache() *Gache {
 	once.Do(func() {
-		instance = New()
+		gache = New()
 	})
-	return instance
+	return gache
 }
 
 func (v value) isValid() bool {
@@ -76,13 +74,13 @@ func (g *Gache) SetDefaultExpire(ex time.Duration) *Gache {
 }
 
 func SetDefaultExpire(ex time.Duration) {
-	defer instance.mu.Unlock()
-	instance.mu.Lock()
-	instance.expire = ex
+	defer gache.mu.Unlock()
+	gache.mu.Lock()
+	gache.expire = ex
 }
 
 func Get(key interface{}) (interface{}, bool) {
-	return instance.get(key)
+	return gache.get(key)
 }
 
 func (g *Gache) Get(key interface{}) (interface{}, bool) {
@@ -108,11 +106,11 @@ func (g *Gache) get(key interface{}) (interface{}, bool) {
 }
 
 func SetWithExpire(key, val interface{}, expire time.Duration) bool {
-	return instance.set(key, val, expire)
+	return gache.set(key, val, expire)
 }
 
 func Set(key, val interface{}) bool {
-	return instance.set(key, val, instance.expire)
+	return gache.set(key, val, gache.expire)
 }
 
 func (g *Gache) SetWithExpire(key, val interface{}, expire time.Duration) bool {
@@ -124,12 +122,31 @@ func (g *Gache) Set(key, val interface{}) bool {
 }
 
 func (g *Gache) set(key, val interface{}, expire time.Duration) bool {
+
 	g.data.Store(key, &value{
 		expire: time.Now().Add(expire),
 		val:    &val,
 	})
 
 	return true
+}
+
+func (g *Gache) DeleteExpired() int {
+	var rows int
+	g.data.Range(func(k, v interface{}) bool {
+		d, ok := v.(*value)
+		if ok && !d.isValid() {
+			g.data.Delete(k)
+			rows++
+		}
+		return true
+	})
+	return rows
+}
+
+func (g *Gache) Delete(key interface{}) bool {
+	g.data.Delete(key)
+	return false
 }
 
 func (g *Gache) SGet(key *http.Request) (*ServerCache, bool) {
@@ -153,23 +170,23 @@ func (g *Gache) CSet(key *http.Request, val *http.Response) error {
 }
 
 func SGet(key *http.Request) (*ServerCache, bool) {
-	return instance.getServerCache(key)
+	return gache.getServerCache(key)
 }
 
 func SSetWithExpire(key *http.Request, status int, header http.Header, body []byte, expire time.Duration) error {
-	return instance.setServerCache(key, status, header, body, expire)
+	return gache.setServerCache(key, status, header, body, expire)
 }
 
 func SSet(key *http.Request, status int, header http.Header, body []byte) error {
-	return instance.setServerCache(key, status, header, body, instance.expire)
+	return gache.setServerCache(key, status, header, body, gache.expire)
 }
 
 func CGet(key *http.Request) (*ClientCache, bool) {
-	return instance.getClientCache(key)
+	return gache.getClientCache(key)
 }
 
 func CSet(key *http.Request, val *http.Response) error {
-	return instance.setClientCache(key, val)
+	return gache.setClientCache(key, val)
 }
 
 func (g *Gache) getServerCache(req *http.Request) (*ServerCache, bool) {
@@ -226,7 +243,7 @@ func (g *Gache) setClientCache(req *http.Request, val *http.Response) error {
 		return err
 	}
 
-	if !g.set(key, cache, cache.Expire.Sub(time.Now())) {
+	if !g.set(key, cache, time.Until(cache.Expire)) {
 		return errors.New("cache already exists")
 	}
 
@@ -242,14 +259,11 @@ func (g *Gache) Clear() {
 }
 
 func Clear() {
-	instance.Clear()
+	gache.Clear()
 }
 
 func generateHTTPKey(r *http.Request) string {
 	key := fmt.Sprintf("%s%s%s%s%v", r.RequestURI, r.Proto, r.Host, r.Method, r.Body)
-	for _, v := range r.Cookies() {
-		key += v.String()
-	}
 	return key
 }
 
