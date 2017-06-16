@@ -5,6 +5,35 @@ import (
 	"testing"
 )
 
+type DefaultMap struct {
+	mu   sync.RWMutex
+	data map[interface{}]interface{}
+}
+
+func NewDefault() *DefaultMap {
+	return &DefaultMap{
+		data: make(map[interface{}]interface{}),
+	}
+}
+
+func (m *DefaultMap) Get(key interface{}) (interface{}, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	v, ok := m.data[key]
+
+	if !ok {
+		return nil, false
+	}
+
+	return v, true
+}
+
+func (m *DefaultMap) Set(key, val interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data[key] = val
+}
+
 var (
 	data = map[string]interface{}{
 		"string": "aaaa",
@@ -37,19 +66,14 @@ func BenchmarkGache(b *testing.B) {
 }
 
 func BenchmarkMap(b *testing.B) {
-	m := make(map[interface{}]interface{})
-	var mu sync.RWMutex
+	m := NewDefault()
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			for k, v := range data {
-				mu.Lock()
-				m[k] = v
-				mu.Unlock()
+				m.Set(k, v)
 
-				mu.RLock()
-				val, ok := m[k]
-				mu.RUnlock()
+				val, ok := m.Get(k)
 				if !ok {
 					b.Errorf("Gache Get failed key: %v\tval: %v\n", k, v)
 				}
