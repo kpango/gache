@@ -13,6 +13,7 @@ import (
 )
 
 type (
+	// Gache is base instance type
 	Gache struct {
 		mu     *sync.RWMutex
 		data   *syncmap.Map

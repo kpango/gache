@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/kpango/gache"
-	"github.com/kpango/glog"
+	"github.com/kpango/glg"
 )
 
 func main() {
@@ -19,7 +19,7 @@ func main() {
 	/**
 	server side handler cache example
 	*/
-	http.Handle("/", glog.HTTPLoggerFunc("sample", httpServerExample))
+	http.Handle("/", glg.HTTPLoggerFunc("sample", httpServerExample))
 
 	/**
 	http client side cache example
@@ -48,15 +48,15 @@ func simpleExample() {
 	// get cache data
 	v1, ok := gache.Get(key1)
 	if ok {
-		glog.Info(v1)
+		glg.Info(v1)
 	}
 	v2, ok := gache.Get(key2)
 	if ok {
-		glog.Info(v2)
+		glg.Info(v2)
 	}
 	v3, ok := gache.Get(key3)
 	if ok {
-		glog.Info(v3)
+		glg.Info(v3)
 	}
 
 	// set gache default expire time
@@ -70,15 +70,15 @@ func simpleExample() {
 	// get cache data
 	v4, ok := gc.Get(key1)
 	if ok {
-		glog.Info(v4)
+		glg.Info(v4)
 	}
 	v5, ok := gc.Get(key2)
 	if ok {
-		glog.Info(v5)
+		glg.Info(v5)
 	}
 	v6, ok := gc.Get(key3)
 	if ok {
-		glog.Info(v6)
+		glg.Info(v6)
 	}
 }
 
@@ -89,7 +89,7 @@ func httpServerExample(w http.ResponseWriter, r *http.Request) {
 
 	// if cached data already exist, return cached data
 	if ok {
-		glog.Info("cached Response")
+		glg.Info("cached Response")
 		/*
 			sc contains the following members
 				Status int
@@ -113,7 +113,7 @@ func httpServerExample(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Println(err)
 		}
-		glog.Info("Response cached")
+		glg.Info("Response cached")
 	}()
 
 	w.WriteHeader(http.StatusOK)

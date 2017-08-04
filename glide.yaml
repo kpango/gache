@@ -1,0 +1,6 @@
+package: github.com/kpango/gache
+import:
+- package: github.com/kpango/glg
+- package: golang.org/x/sync
+  subpackages:
+  - syncmap
