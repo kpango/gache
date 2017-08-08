@@ -1,6 +1,7 @@
 package gache
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -67,6 +68,10 @@ func (v value) isValid() bool {
 	return time.Now().Before(v.expire)
 }
 
+func SetDefaultExpire(ex time.Duration) {
+	gache.SetDefaultExpire(ex)
+}
+
 func (g *Gache) SetDefaultExpire(ex time.Duration) *Gache {
 	defer g.mu.Unlock()
 	g.mu.Lock()
@@ -74,10 +79,20 @@ func (g *Gache) SetDefaultExpire(ex time.Duration) *Gache {
 	return g
 }
 
-func SetDefaultExpire(ex time.Duration) {
-	defer gache.mu.Unlock()
-	gache.mu.Lock()
-	gache.expire = ex
+func (g *Gache) StartExpired(ctx context.Context, dur time.Duration) *Gache {
+	go func() {
+		tick := time.NewTicker(dur)
+		for {
+			select {
+			case <-ctx.Done():
+				tick.Stop()
+				return
+			case <-tick.C:
+				g.DeleteExpired()
+			}
+		}
+	}()
+	return g
 }
 
 func Get(key interface{}) (interface{}, bool) {

@@ -43,7 +43,7 @@ lint:
 	gometalinter --enable-all . | rg -v comment
 
 tests:
-	go test -v ./...
+	go test -v $(go list ./... | rg -v vendor)
 
 contributors:
 	git log --format='%aN <%aE>' | sort -fu > CONTRIBUTORS
