@@ -266,6 +266,18 @@ func (g *Gache) setClientCache(req *http.Request, val *http.Response) error {
 	return nil
 }
 
+func Foreach(f func(key, val interface{}) bool) *Gache {
+	gache.Foreach(f)
+	return gache
+}
+
+func (g *Gache) Foreach(f func(key, val interface{}) bool) *Gache {
+	g.data.Range(func(key, val interface{}) bool {
+		return f(key, val)
+	})
+	return g
+}
+
 func (g *Gache) Clear() {
 	g.data.Range(func(key, val interface{}) bool {
 		g.data.Delete(key)
