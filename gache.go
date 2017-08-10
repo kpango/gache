@@ -22,7 +22,7 @@ type (
 	}
 
 	value struct {
-		expire time.Time
+		expire int64
 		val    *interface{}
 	}
 
@@ -65,7 +65,7 @@ func GetGache() *Gache {
 }
 
 func (v value) isValid() bool {
-	return time.Now().Before(v.expire)
+	return time.Now().UnixNano() < v.expire
 }
 
 func SetDefaultExpire(ex time.Duration) {
@@ -121,30 +121,28 @@ func (g *Gache) get(key interface{}) (interface{}, bool) {
 	return *d.val, true
 }
 
-func SetWithExpire(key, val interface{}, expire time.Duration) bool {
-	return gache.set(key, val, expire)
+func SetWithExpire(key, val interface{}, expire time.Duration) {
+	gache.set(key, val, expire)
 }
 
-func Set(key, val interface{}) bool {
-	return gache.set(key, val, gache.expire)
+func Set(key, val interface{}) {
+	gache.set(key, val, gache.expire)
 }
 
-func (g *Gache) SetWithExpire(key, val interface{}, expire time.Duration) bool {
-	return g.set(key, val, expire)
+func (g *Gache) SetWithExpire(key, val interface{}, expire time.Duration) {
+	g.set(key, val, expire)
 }
 
-func (g *Gache) Set(key, val interface{}) bool {
-	return g.set(key, val, g.expire)
+func (g *Gache) Set(key, val interface{}) {
+	g.set(key, val, g.expire)
 }
 
-func (g *Gache) set(key, val interface{}, expire time.Duration) bool {
+func (g *Gache) set(key, val interface{}, expire time.Duration) {
 
 	g.data.Store(key, &value{
-		expire: time.Now().Add(expire),
+		expire: time.Now().Add(expire).UnixNano(),
 		val:    &val,
 	})
-
-	return true
 }
 
 func (g *Gache) DeleteExpired() int {
@@ -226,13 +224,11 @@ func (g *Gache) setServerCache(req *http.Request, status int, header http.Header
 		return errors.New("cache already exists")
 	}
 
-	if !g.set(key, &ServerCache{
+	g.set(key, &ServerCache{
 		Status: status,
 		Header: header,
 		Body:   body,
-	}, expire) {
-		return errors.New("cache already exists")
-	}
+	}, expire)
 
 	return nil
 }
@@ -259,10 +255,7 @@ func (g *Gache) setClientCache(req *http.Request, val *http.Response) error {
 		return err
 	}
 
-	if !g.set(key, cache, time.Until(cache.Expire)) {
-		return errors.New("cache already exists")
-	}
-
+	g.set(key, cache, time.Until(cache.Expire))
 	return nil
 }
 

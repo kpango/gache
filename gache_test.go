@@ -27,10 +27,7 @@ func TestGache(t *testing.T) {
 
 	for k, v := range data {
 		t.Run(fmt.Sprintf("key: %v\tval: %v", k, v), func(t *testing.T) {
-			ok := Set(k, v)
-			if !ok {
-				t.Errorf("Gache Set failed key: %v\tval: %v\n", k, v)
-			}
+			Set(k, v)
 			val, ok := Get(k)
 			if !ok {
 				t.Errorf("Gache Get failed key: %v\tval: %v\n", k, v)
@@ -82,7 +79,7 @@ func TestGetGache(t *testing.T) {
 
 func Test_value_isValid(t *testing.T) {
 	type fields struct {
-		expire time.Time
+		expire int64
 		val    *interface{}
 	}
 	tests := []struct {
@@ -265,9 +262,7 @@ func TestSetWithExpire(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := SetWithExpire(tt.args.key, tt.args.val, tt.args.expire); got != tt.want {
-				t.Errorf("SetWithExpire() = %v, want %v", got, tt.want)
-			}
+			SetWithExpire(tt.args.key, tt.args.val, tt.args.expire)
 		})
 	}
 }
@@ -286,9 +281,7 @@ func TestSet(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := Set(tt.args.key, tt.args.val); got != tt.want {
-				t.Errorf("Set() = %v, want %v", got, tt.want)
-			}
+			Set(tt.args.key, tt.args.val)
 		})
 	}
 }
@@ -319,9 +312,7 @@ func TestGache_SetWithExpire(t *testing.T) {
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
-			if got := g.SetWithExpire(tt.args.key, tt.args.val, tt.args.expire); got != tt.want {
-				t.Errorf("Gache.SetWithExpire() = %v, want %v", got, tt.want)
-			}
+			g.SetWithExpire(tt.args.key, tt.args.val, tt.args.expire)
 		})
 	}
 }
@@ -351,9 +342,7 @@ func TestGache_Set(t *testing.T) {
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
-			if got := g.Set(tt.args.key, tt.args.val); got != tt.want {
-				t.Errorf("Gache.Set() = %v, want %v", got, tt.want)
-			}
+			g.Set(tt.args.key, tt.args.val)
 		})
 	}
 }
@@ -384,9 +373,7 @@ func TestGache_set(t *testing.T) {
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
-			if got := g.set(tt.args.key, tt.args.val, tt.args.expire); got != tt.want {
-				t.Errorf("Gache.set() = %v, want %v", got, tt.want)
-			}
+			g.set(tt.args.key, tt.args.val, tt.args.expire)
 		})
 	}
 }

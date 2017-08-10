@@ -49,10 +49,7 @@ func BenchmarkGache(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			for k, v := range data {
-				ok := Set(k, v)
-				if !ok {
-					b.Errorf("Gache Set failed key: %v\tval: %v\n", k, v)
-				}
+				Set(k, v)
 				val, ok := Get(k)
 				if !ok {
 					b.Errorf("Gache Get failed key: %v\tval: %v\n", k, v)
