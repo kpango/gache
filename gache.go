@@ -9,15 +9,13 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/sync/syncmap"
 )
 
 type (
 	// Gache is base instance type
 	Gache struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 
@@ -52,7 +50,7 @@ func init() {
 func New() *Gache {
 	return &Gache{
 		mu:     new(sync.RWMutex),
-		data:   new(syncmap.Map),
+		data:   new(sync.Map),
 		expire: time.Second * 30,
 	}
 }

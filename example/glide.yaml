@@ -1,0 +1,4 @@
+package: github.com/kpango/gache/example
+import:
+- package: github.com/kpango/gache
+- package: github.com/kpango/glg

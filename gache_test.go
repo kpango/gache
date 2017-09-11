@@ -7,8 +7,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"golang.org/x/sync/syncmap"
 )
 
 var g *Gache
@@ -105,7 +103,7 @@ func Test_value_isValid(t *testing.T) {
 func TestGache_SetDefaultExpire(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -178,7 +176,7 @@ func TestGet(t *testing.T) {
 func TestGache_Get(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -214,7 +212,7 @@ func TestGache_Get(t *testing.T) {
 func TestGache_get(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -289,7 +287,7 @@ func TestSet(t *testing.T) {
 func TestGache_SetWithExpire(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -320,7 +318,7 @@ func TestGache_SetWithExpire(t *testing.T) {
 func TestGache_Set(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -350,7 +348,7 @@ func TestGache_Set(t *testing.T) {
 func TestGache_set(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -381,7 +379,7 @@ func TestGache_set(t *testing.T) {
 func TestGache_DeleteExpired(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	tests := []struct {
@@ -408,7 +406,7 @@ func TestGache_DeleteExpired(t *testing.T) {
 func TestGache_Delete(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -439,7 +437,7 @@ func TestGache_Delete(t *testing.T) {
 func TestGache_SGet(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -475,7 +473,7 @@ func TestGache_SGet(t *testing.T) {
 func TestGache_SSetWithExpire(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -510,7 +508,7 @@ func TestGache_SSetWithExpire(t *testing.T) {
 func TestGache_SSet(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -544,7 +542,7 @@ func TestGache_SSet(t *testing.T) {
 func TestGache_CGet(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -580,7 +578,7 @@ func TestGache_CGet(t *testing.T) {
 func TestGache_CSet(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -730,7 +728,7 @@ func TestCSet(t *testing.T) {
 func TestGache_getServerCache(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -766,7 +764,7 @@ func TestGache_getServerCache(t *testing.T) {
 func TestGache_setServerCache(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -801,7 +799,7 @@ func TestGache_setServerCache(t *testing.T) {
 func TestGache_getClientCache(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -837,7 +835,7 @@ func TestGache_getClientCache(t *testing.T) {
 func TestGache_setClientCache(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	type args struct {
@@ -869,7 +867,7 @@ func TestGache_setClientCache(t *testing.T) {
 func TestGache_Clear(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
-		data   *syncmap.Map
+		data   *sync.Map
 		expire time.Duration
 	}
 	tests := []struct {
