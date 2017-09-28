@@ -1,20 +1,13 @@
 GO_VERSION:=$(shell go version)
 
-.PHONY: init bench bench-all profile tests clean install lint contributors
+.PHONY: all clean bench bench-all profile lint test contributors update install
 
-all: clean install tests vet
-
-buildserverall: clean install regenerate install tests vet js
-
-init:
-	glide init
-
-install:
-	glide install
+all: clean install lint test bench
 
 clean:
 	go clean ./...
-	rm pprof
+	rm -rf pprof
+	rm -rf vendor
 
 bench:
 	go test -count=5 -run=NONE -bench . -benchmem
@@ -42,7 +35,7 @@ profile:
 lint:
 	gometalinter --enable-all . | rg -v comment
 
-tests:
+test:
 	go test -v $(go list ./... | rg -v vendor)
 
 contributors:

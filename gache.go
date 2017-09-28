@@ -16,12 +16,12 @@ type (
 	Gache struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		expire time.Duration
+		Expire time.Duration
 	}
 
-	value struct {
-		expire int64
-		val    *interface{}
+	Value struct {
+		Expire int64
+		Val    *interface{}
 	}
 
 	ServerCache struct {
@@ -51,7 +51,7 @@ func New() *Gache {
 	return &Gache{
 		mu:     new(sync.RWMutex),
 		data:   new(sync.Map),
-		expire: time.Second * 30,
+		Expire: time.Second * 30,
 	}
 }
 
@@ -62,8 +62,8 @@ func GetGache() *Gache {
 	return gache
 }
 
-func (v value) isValid() bool {
-	return time.Now().UnixNano() < v.expire
+func (v Value) isValid() bool {
+	return time.Now().UnixNano() < v.Expire
 }
 
 func SetDefaultExpire(ex time.Duration) {
@@ -73,7 +73,7 @@ func SetDefaultExpire(ex time.Duration) {
 func (g *Gache) SetDefaultExpire(ex time.Duration) *Gache {
 	defer g.mu.Unlock()
 	g.mu.Lock()
-	g.expire = ex
+	g.Expire = ex
 	return g
 }
 
@@ -109,14 +109,14 @@ func (g *Gache) get(key interface{}) (interface{}, bool) {
 		return nil, false
 	}
 
-	d, ok := v.(*value)
+	d, ok := v.(*Value)
 
 	if !ok || !d.isValid() {
 		g.data.Delete(key)
 		return nil, false
 	}
 
-	return *d.val, true
+	return *d.Val, true
 }
 
 func SetWithExpire(key, val interface{}, expire time.Duration) {
@@ -124,7 +124,7 @@ func SetWithExpire(key, val interface{}, expire time.Duration) {
 }
 
 func Set(key, val interface{}) {
-	gache.set(key, val, gache.expire)
+	gache.set(key, val, gache.Expire)
 }
 
 func (g *Gache) SetWithExpire(key, val interface{}, expire time.Duration) {
@@ -132,21 +132,20 @@ func (g *Gache) SetWithExpire(key, val interface{}, expire time.Duration) {
 }
 
 func (g *Gache) Set(key, val interface{}) {
-	g.set(key, val, g.expire)
+	g.set(key, val, g.Expire)
 }
 
 func (g *Gache) set(key, val interface{}, expire time.Duration) {
-
-	g.data.Store(key, &value{
-		expire: time.Now().Add(expire).UnixNano(),
-		val:    &val,
+	g.data.Store(key, &Value{
+		Expire: time.Now().Add(expire).UnixNano(),
+		Val:    &val,
 	})
 }
 
 func (g *Gache) DeleteExpired() int {
 	var rows int
 	g.data.Range(func(k, v interface{}) bool {
-		d, ok := v.(*value)
+		d, ok := v.(*Value)
 		if ok && !d.isValid() {
 			g.data.Delete(k)
 			rows++
@@ -170,7 +169,7 @@ func (g *Gache) SSetWithExpire(key *http.Request, status int, header http.Header
 }
 
 func (g *Gache) SSet(key *http.Request, status int, header http.Header, body []byte) error {
-	return g.setServerCache(key, status, header, body, g.expire)
+	return g.setServerCache(key, status, header, body, g.Expire)
 }
 
 func (g *Gache) CGet(key *http.Request) (*ClientCache, bool) {
@@ -190,7 +189,7 @@ func SSetWithExpire(key *http.Request, status int, header http.Header, body []by
 }
 
 func SSet(key *http.Request, status int, header http.Header, body []byte) error {
-	return gache.setServerCache(key, status, header, body, gache.expire)
+	return gache.setServerCache(key, status, header, body, gache.Expire)
 }
 
 func CGet(key *http.Request) (*ClientCache, bool) {
@@ -282,8 +281,7 @@ func Clear() {
 }
 
 func generateHTTPKey(r *http.Request) string {
-	key := fmt.Sprintf("%s%s%s%s%v", r.RequestURI, r.Proto, r.Host, r.Method, r.Body)
-	return key
+	return fmt.Sprintf("%s%s%s%s%v", r.RequestURI, r.Proto, r.Host, r.Method, r.Body)
 }
 
 func createHTTPCache(res *http.Response) (*ClientCache, error) {
