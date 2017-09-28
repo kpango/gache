@@ -50,8 +50,8 @@ func TestNew(t *testing.T) {
 		if got.data == nil {
 			t.Error("New().mu is nil")
 		}
-		if got.Expire != time.Second*30 {
-			t.Errorf("New().Expire = %v, want %v", got.Expire, time.Second*30)
+		if got.expire != time.Second*30 {
+			t.Errorf("New().expire = %v, want %v", got.expire, time.Second*30)
 		}
 	})
 }
@@ -68,8 +68,8 @@ func TestGetGache(t *testing.T) {
 		if got.data == nil {
 			t.Error("GetGache().mu is nil")
 		}
-		if got.Expire != time.Second*30 {
-			t.Errorf("GetGache().Expire = %v, want %v", got.Expire, time.Second*30)
+		if got.expire != time.Second*30 {
+			t.Errorf("GetGache().expire = %v, want %v", got.expire, time.Second*30)
 		}
 	})
 
@@ -77,7 +77,7 @@ func TestGetGache(t *testing.T) {
 
 func Test_value_isValid(t *testing.T) {
 	type fields struct {
-		Expire int64
+		expire int64
 		val    *interface{}
 	}
 	tests := []struct {
@@ -89,9 +89,9 @@ func Test_value_isValid(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := Value{
-				Expire: tt.fields.Expire,
-				Val:    tt.fields.val,
+			v := value{
+				expire: tt.fields.expire,
+				val:    tt.fields.val,
 			}
 			if got := v.isValid(); got != tt.want {
 				t.Errorf("value.isValid() = %v, want %v", got, tt.want)
@@ -100,11 +100,11 @@ func Test_value_isValid(t *testing.T) {
 	}
 }
 
-func TestGache_SetDefaultExpire(t *testing.T) {
+func TestGache_SetDefaultexpire(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		ex time.Duration
@@ -122,16 +122,16 @@ func TestGache_SetDefaultExpire(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
-			if got := g.SetDefaultExpire(tt.args.ex); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Gache.SetDefaultExpire() = %v, want %v", got, tt.want)
+			if got := g.SetDefaultexpire(tt.args.ex); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Gache.SetDefaultexpire() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestSetDefaultExpire(t *testing.T) {
+func TestSetDefaultexpire(t *testing.T) {
 	type args struct {
 		ex time.Duration
 	}
@@ -143,7 +143,7 @@ func TestSetDefaultExpire(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			SetDefaultExpire(tt.args.ex)
+			SetDefaultexpire(tt.args.ex)
 		})
 	}
 }
@@ -177,7 +177,7 @@ func TestGache_Get(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		key interface{}
@@ -196,7 +196,7 @@ func TestGache_Get(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
 			got, got1 := g.Get(tt.args.key)
 			if !reflect.DeepEqual(got, tt.want) {
@@ -213,7 +213,7 @@ func TestGache_get(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		key interface{}
@@ -232,7 +232,7 @@ func TestGache_get(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
 			got, got1 := g.get(tt.args.key)
 			if !reflect.DeepEqual(got, tt.want) {
@@ -249,7 +249,7 @@ func TestSetWithExpire(t *testing.T) {
 	type args struct {
 		key    interface{}
 		val    interface{}
-		Expire time.Duration
+		expire time.Duration
 	}
 	tests := []struct {
 		name string
@@ -260,7 +260,7 @@ func TestSetWithExpire(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			SetWithExpire(tt.args.key, tt.args.val, tt.args.Expire)
+			SetWithExpire(tt.args.key, tt.args.val, tt.args.expire)
 		})
 	}
 }
@@ -288,12 +288,12 @@ func TestGache_SetWithExpire(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		key    interface{}
 		val    interface{}
-		Expire time.Duration
+		expire time.Duration
 	}
 	tests := []struct {
 		name   string
@@ -308,9 +308,9 @@ func TestGache_SetWithExpire(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
-			g.SetWithExpire(tt.args.key, tt.args.val, tt.args.Expire)
+			g.SetWithExpire(tt.args.key, tt.args.val, tt.args.expire)
 		})
 	}
 }
@@ -319,7 +319,7 @@ func TestGache_Set(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		key interface{}
@@ -338,7 +338,7 @@ func TestGache_Set(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
 			g.Set(tt.args.key, tt.args.val)
 		})
@@ -349,12 +349,12 @@ func TestGache_set(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		key    interface{}
 		val    interface{}
-		Expire time.Duration
+		expire time.Duration
 	}
 	tests := []struct {
 		name   string
@@ -369,9 +369,9 @@ func TestGache_set(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
-			g.set(tt.args.key, tt.args.val, tt.args.Expire)
+			g.set(tt.args.key, tt.args.val, tt.args.expire)
 		})
 	}
 }
@@ -380,7 +380,7 @@ func TestGache_DeleteExpired(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	tests := []struct {
 		name   string
@@ -394,7 +394,7 @@ func TestGache_DeleteExpired(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
 			if got := g.DeleteExpired(); got != tt.want {
 				t.Errorf("Gache.DeleteExpired() = %v, want %v", got, tt.want)
@@ -407,7 +407,7 @@ func TestGache_Delete(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		key interface{}
@@ -425,7 +425,7 @@ func TestGache_Delete(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
 			if got := g.Delete(tt.args.key); got != tt.want {
 				t.Errorf("Gache.Delete() = %v, want %v", got, tt.want)
@@ -438,7 +438,7 @@ func TestGache_SGet(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		key *http.Request
@@ -457,7 +457,7 @@ func TestGache_SGet(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
 			got, got1 := g.SGet(tt.args.key)
 			if !reflect.DeepEqual(got, tt.want) {
@@ -474,14 +474,14 @@ func TestGache_SSetWithExpire(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		key    *http.Request
 		status int
 		header http.Header
 		body   []byte
-		Expire time.Duration
+		expire time.Duration
 	}
 	tests := []struct {
 		name    string
@@ -496,9 +496,9 @@ func TestGache_SSetWithExpire(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
-			if err := g.SSetWithExpire(tt.args.key, tt.args.status, tt.args.header, tt.args.body, tt.args.Expire); (err != nil) != tt.wantErr {
+			if err := g.SSetWithExpire(tt.args.key, tt.args.status, tt.args.header, tt.args.body, tt.args.expire); (err != nil) != tt.wantErr {
 				t.Errorf("Gache.SSetWithExpire() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -509,7 +509,7 @@ func TestGache_SSet(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		key    *http.Request
@@ -530,7 +530,7 @@ func TestGache_SSet(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
 			if err := g.SSet(tt.args.key, tt.args.status, tt.args.header, tt.args.body); (err != nil) != tt.wantErr {
 				t.Errorf("Gache.SSet() error = %v, wantErr %v", err, tt.wantErr)
@@ -543,7 +543,7 @@ func TestGache_CGet(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		key *http.Request
@@ -562,7 +562,7 @@ func TestGache_CGet(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
 			got, got1 := g.CGet(tt.args.key)
 			if !reflect.DeepEqual(got, tt.want) {
@@ -579,7 +579,7 @@ func TestGache_CSet(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		key *http.Request
@@ -598,7 +598,7 @@ func TestGache_CSet(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
 			if err := g.CSet(tt.args.key, tt.args.val); (err != nil) != tt.wantErr {
 				t.Errorf("Gache.CSet() error = %v, wantErr %v", err, tt.wantErr)
@@ -638,7 +638,7 @@ func TestSSetWithExpire(t *testing.T) {
 		status int
 		header http.Header
 		body   []byte
-		Expire time.Duration
+		expire time.Duration
 	}
 	tests := []struct {
 		name    string
@@ -649,7 +649,7 @@ func TestSSetWithExpire(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := SSetWithExpire(tt.args.key, tt.args.status, tt.args.header, tt.args.body, tt.args.Expire); (err != nil) != tt.wantErr {
+			if err := SSetWithExpire(tt.args.key, tt.args.status, tt.args.header, tt.args.body, tt.args.expire); (err != nil) != tt.wantErr {
 				t.Errorf("SSetWithExpire() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -729,7 +729,7 @@ func TestGache_getServerCache(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		req *http.Request
@@ -748,7 +748,7 @@ func TestGache_getServerCache(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
 			got, got1 := g.getServerCache(tt.args.req)
 			if !reflect.DeepEqual(got, tt.want) {
@@ -765,14 +765,14 @@ func TestGache_setServerCache(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		req    *http.Request
 		status int
 		header http.Header
 		body   []byte
-		Expire time.Duration
+		expire time.Duration
 	}
 	tests := []struct {
 		name    string
@@ -787,9 +787,9 @@ func TestGache_setServerCache(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
-			if err := g.setServerCache(tt.args.req, tt.args.status, tt.args.header, tt.args.body, tt.args.Expire); (err != nil) != tt.wantErr {
+			if err := g.setServerCache(tt.args.req, tt.args.status, tt.args.header, tt.args.body, tt.args.expire); (err != nil) != tt.wantErr {
 				t.Errorf("Gache.setServerCache() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -800,7 +800,7 @@ func TestGache_getClientCache(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		req *http.Request
@@ -819,7 +819,7 @@ func TestGache_getClientCache(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
 			got, got1 := g.getClientCache(tt.args.req)
 			if !reflect.DeepEqual(got, tt.want) {
@@ -836,7 +836,7 @@ func TestGache_setClientCache(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	type args struct {
 		req *http.Request
@@ -855,7 +855,7 @@ func TestGache_setClientCache(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
 			if err := g.setClientCache(tt.args.req, tt.args.val); (err != nil) != tt.wantErr {
 				t.Errorf("Gache.setClientCache() error = %v, wantErr %v", err, tt.wantErr)
@@ -868,7 +868,7 @@ func TestGache_Clear(t *testing.T) {
 	type fields struct {
 		mu     *sync.RWMutex
 		data   *sync.Map
-		Expire time.Duration
+		expire time.Duration
 	}
 	tests := []struct {
 		name   string
@@ -881,7 +881,7 @@ func TestGache_Clear(t *testing.T) {
 			g := &Gache{
 				mu:     tt.fields.mu,
 				data:   tt.fields.data,
-				Expire: tt.fields.Expire,
+				expire: tt.fields.expire,
 			}
 			g.Clear()
 		})

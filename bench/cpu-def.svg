@@ -178,7 +178,7 @@ function handleMouseWheel(evt) {
 	if(evt.preventDefault)
 		evt.preventDefault();
 
-	evt.returnValue = false;
+	evt.returnvalue = false;
 
 	var svgDoc = evt.target.ownerDocument;
 
@@ -215,7 +215,7 @@ function handleMouseMove(evt) {
 	if(evt.preventDefault)
 		evt.preventDefault();
 
-	evt.returnValue = false;
+	evt.returnvalue = false;
 
 	var svgDoc = evt.target.ownerDocument;
 
@@ -243,7 +243,7 @@ function handleMouseDown(evt) {
 	if(evt.preventDefault)
 		evt.preventDefault();
 
-	evt.returnValue = false;
+	evt.returnvalue = false;
 
 	var svgDoc = evt.target.ownerDocument;
 
@@ -278,7 +278,7 @@ function handleMouseUp(evt) {
 	if(evt.preventDefault)
 		evt.preventDefault();
 
-	evt.returnValue = false;
+	evt.returnvalue = false;
 
 	var svgDoc = evt.target.ownerDocument;
 

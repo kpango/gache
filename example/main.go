@@ -60,12 +60,12 @@ func simpleExample() {
 	}
 
 	// set gache default expire time
-	gc := gache.New().SetDefaultExpire(time.Second * 10)
+	gc := gache.New().SetDefaultexpire(time.Second * 10)
 
 	// store with expire setting
-	gc.SetWithExpire(key1, value1, time.Second*30)
-	gc.SetWithExpire(key2, value2, time.Second*60)
-	gc.SetWithExpire(key3, value3, time.Hour)
+	gc.SetWithexpire(key1, value1, time.Second*30)
+	gc.SetWithexpire(key2, value2, time.Second*60)
+	gc.SetWithexpire(key3, value3, time.Hour)
 
 	// get cache data
 	v4, ok := gc.Get(key1)
@@ -140,7 +140,7 @@ func httpClientExample() *http.Response {
 		/*
 			sc contains the following members
 				Etag         string
-				Expire       time.Time
+				expire       time.Time
 				LastModified string
 				Res          *http.Response
 		*/
