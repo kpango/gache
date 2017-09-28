@@ -124,7 +124,7 @@ func TestGache_SetDefaultexpire(t *testing.T) {
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
-			if got := g.SetDefaultexpire(tt.args.ex); !reflect.DeepEqual(got, tt.want) {
+			if got := g.SetDefaultExpire(tt.args.ex); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Gache.SetDefaultexpire() = %v, want %v", got, tt.want)
 			}
 		})
@@ -143,7 +143,7 @@ func TestSetDefaultexpire(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			SetDefaultexpire(tt.args.ex)
+			SetDefaultExpire(tt.args.ex)
 		})
 	}
 }

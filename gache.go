@@ -66,11 +66,11 @@ func (v value) isValid() bool {
 	return time.Now().UnixNano() < v.expire
 }
 
-func SetDefaultexpire(ex time.Duration) {
-	gache.SetDefaultexpire(ex)
+func SetDefaultExpire(ex time.Duration) {
+	gache.SetDefaultExpire(ex)
 }
 
-func (g *Gache) SetDefaultexpire(ex time.Duration) *Gache {
+func (g *Gache) SetDefaultExpire(ex time.Duration) *Gache {
 	defer g.mu.Unlock()
 	g.mu.Lock()
 	g.expire = ex
