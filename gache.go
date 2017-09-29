@@ -77,7 +77,7 @@ func (g *Gache) SetDefaultExpire(ex time.Duration) *Gache {
 	return g
 }
 
-func (g *Gache) Startexpired(ctx context.Context, dur time.Duration) *Gache {
+func (g *Gache) StartExpired(ctx context.Context, dur time.Duration) *Gache {
 	go func() {
 		tick := time.NewTicker(dur)
 		for {
