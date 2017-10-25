@@ -427,9 +427,7 @@ func TestGache_Delete(t *testing.T) {
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
-			if got := g.Delete(tt.args.key); got != tt.want {
-				t.Errorf("Gache.Delete() = %v, want %v", got, tt.want)
-			}
+			g.Delete(tt.args.key)
 		})
 	}
 }

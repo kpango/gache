@@ -63,7 +63,7 @@ func GetGache() *Gache {
 }
 
 func (v value) isValid() bool {
-	return time.Now().UnixNano() < v.expire
+	return v.expire == 0 || time.Now().UnixNano() < v.expire
 }
 
 func SetDefaultExpire(ex time.Duration) {
@@ -155,9 +155,8 @@ func (g *Gache) DeleteExpired() int {
 	return rows
 }
 
-func (g *Gache) Delete(key interface{}) bool {
+func (g *Gache) Delete(key interface{}) {
 	g.data.Delete(key)
-	return false
 }
 
 func (g *Gache) SGet(key *http.Request) (*ServerCache, bool) {
