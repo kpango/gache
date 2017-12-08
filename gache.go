@@ -93,6 +93,23 @@ func (g *Gache) StartExpired(ctx context.Context, dur time.Duration) *Gache {
 	return g
 }
 
+func ToMap() map[interface{}]interface{} {
+	return gache.ToMap()
+}
+
+func (g *Gache) ToMap() map[interface{}]interface{} {
+	var m map[interface{}]interface{}
+	g.Foreach(func(key, val interface{}, exp int64) bool {
+		if exp == 0 || time.Now().UnixNano() < exp {
+			m[key] = val
+		} else {
+			g.Delete(key)
+		}
+		return true
+	})
+	return m
+}
+
 func Get(key interface{}) (interface{}, bool) {
 	return gache.get(key)
 }
@@ -255,15 +272,15 @@ func (g *Gache) setClientCache(req *http.Request, val *http.Response) error {
 	return nil
 }
 
-func Foreach(f func(key, val interface{}, expire int64) bool) *Gache {
+func Foreach(f func(interface{}, interface{}, int64) bool) *Gache {
 	return gache.Foreach(f)
 }
 
-func (g *Gache) Foreach(f func(key, val interface{}, expire int64) bool) *Gache {
-	g.data.Range(func(key, val interface{}) bool {
-		d, ok := val.(*value)
-		if !ok {
-			return f(key, val, d.expire)
+func (g *Gache) Foreach(f func(interface{}, interface{}, int64) bool) *Gache {
+	g.data.Range(func(k, v interface{}) bool {
+		d, ok := v.(*value)
+		if ok {
+			return f(k, v, d.expire)
 		}
 		return false
 	})
