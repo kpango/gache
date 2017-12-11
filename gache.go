@@ -172,6 +172,10 @@ func (g *Gache) DeleteExpired() int {
 	return rows
 }
 
+func Delete(key interface{}) {
+	gache.Delete(key)
+}
+
 func (g *Gache) Delete(key interface{}) {
 	g.data.Delete(key)
 }
