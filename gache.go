@@ -103,7 +103,7 @@ func (g *Gache) ToMap() map[interface{}]interface{} {
 		d, ok := v.(*value)
 		if ok {
 			if d.expire == 0 || time.Now().UnixNano() < d.expire {
-				m[k] = v
+				m[k] = d.val
 			} else {
 				g.Delete(k)
 			}
