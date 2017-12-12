@@ -98,14 +98,18 @@ func ToMap() map[interface{}]interface{} {
 }
 
 func (g *Gache) ToMap() map[interface{}]interface{} {
-	var m map[interface{}]interface{}
-	g.Foreach(func(key, val interface{}, exp int64) bool {
-		if exp == 0 || time.Now().UnixNano() < exp {
-			m[key] = val
-		} else {
-			g.Delete(key)
+	m := make(map[interface{}]interface{})
+	g.data.Range(func(k, v interface{}) bool {
+		d, ok := v.(*value)
+		if ok {
+			if d.expire == 0 || time.Now().UnixNano() < d.expire {
+				m[k] = v
+			} else {
+				g.Delete(k)
+			}
+			return true
 		}
-		return true
+		return false
 	})
 	return m
 }
@@ -296,7 +300,7 @@ func (g *Gache) Clear() {
 		g.data.Delete(key)
 		return true
 	})
-	g.data = nil
+	g.data = new(sync.Map)
 }
 
 func Clear() {
