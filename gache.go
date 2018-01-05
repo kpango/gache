@@ -71,8 +71,8 @@ func SetDefaultExpire(ex time.Duration) {
 }
 
 func (g *Gache) SetDefaultExpire(ex time.Duration) *Gache {
-	defer g.mu.Unlock()
 	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.expire = ex
 	return g
 }
@@ -102,8 +102,10 @@ func (g *Gache) ToMap() map[interface{}]interface{} {
 	g.data.Range(func(k, v interface{}) bool {
 		d, ok := v.(*value)
 		if ok {
-			if d.expire == 0 || time.Now().UnixNano() < d.expire {
+			if d.isValid() {
 				m[k] = d.val
+			} else {
+				g.Delete(k)
 			}
 			return true
 		}
