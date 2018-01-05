@@ -104,8 +104,6 @@ func (g *Gache) ToMap() map[interface{}]interface{} {
 		if ok {
 			if d.expire == 0 || time.Now().UnixNano() < d.expire {
 				m[k] = d.val
-			} else {
-				g.Delete(k)
 			}
 			return true
 		}
