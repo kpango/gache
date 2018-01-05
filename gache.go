@@ -157,8 +157,12 @@ func (g *Gache) Set(key, val interface{}) {
 }
 
 func (g *Gache) set(key, val interface{}, expire time.Duration) {
+	var exp int64
+	if expire != 0 {
+		exp = time.Now().Add(expire).UnixNano()
+	}
 	g.data.Store(key, &value{
-		expire: time.Now().Add(expire).UnixNano(),
+		expire: exp,
 		val:    &val,
 	})
 }
