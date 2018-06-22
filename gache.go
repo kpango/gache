@@ -103,7 +103,7 @@ func (g *Gache) ToMap() map[interface{}]interface{} {
 		d, ok := v.(*value)
 		if ok {
 			if d.isValid() {
-				m[k] = d.val
+				m[k] = *d.val
 			} else {
 				g.Delete(k)
 			}
@@ -292,7 +292,7 @@ func (g *Gache) Foreach(f func(interface{}, interface{}, int64) bool) *Gache {
 	g.data.Range(func(k, v interface{}) bool {
 		d, ok := v.(*value)
 		if ok {
-			return f(k, v, d.expire)
+			return f(k, *d.val, d.expire)
 		}
 		return false
 	})
