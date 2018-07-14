@@ -20,12 +20,7 @@ func (m *DefaultMap) Get(key interface{}) (interface{}, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	v, ok := m.data[key]
-
-	if !ok {
-		return nil, false
-	}
-
-	return v, true
+	return v, ok
 }
 
 func (m *DefaultMap) Set(key, val interface{}) {
@@ -46,6 +41,7 @@ var (
 func BenchmarkGache(b *testing.B) {
 	New()
 	b.ResetTimer()
+	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			for k, v := range data {
@@ -65,6 +61,7 @@ func BenchmarkGache(b *testing.B) {
 func BenchmarkMap(b *testing.B) {
 	m := NewDefault()
 	b.ResetTimer()
+	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			for k, v := range data {
