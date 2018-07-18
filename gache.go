@@ -228,9 +228,8 @@ func (g *gache) Foreach(f func(interface{}, interface{}, int64) bool) Gache {
 		if ok {
 			if d.isValid() {
 				return f(k, *d.val, d.expire)
-			} else {
-				g.Delete(k)
 			}
+			g.Delete(k)
 		}
 		return false
 	})
