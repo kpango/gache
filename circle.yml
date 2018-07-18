@@ -17,9 +17,8 @@ dependencies:
   pre:
     - pwd
     - echo "${PROJECT_PATH}"
-    # - go get -u -v github.com/Masterminds/glide
-    # - glide init --non-interactive
-    # - glide install
+    - go get -u -v github.com/golang/dep/cmd/dep
+    - dep ensure
   override:
     - mkdir -p ~/.go_project/src/github.com/${CIRCLE_PROJECT_USERNAME}
     - ln -s ${HOME}/${CIRCLE_PROJECT_REPONAME} ${BUILD_PATH}
