@@ -1,8 +1,6 @@
 package main
 
 import (
-	"log"
-	"net/http"
 	"time"
 
 	"github.com/kpango/gache"
@@ -10,32 +8,10 @@ import (
 )
 
 func main() {
-
-	/**
-	simple cache example
-	*/
-	simpleExample()
-
-	/**
-	server side handler cache example
-	*/
-	http.Handle("/", glg.HTTPLoggerFunc("sample", httpServerExample))
-
-	/**
-	http client side cache example
-	*/
-	httpClientExample()
-
-	http.ListenAndServe(":9090", nil)
-}
-
-//	simple cache example
-func simpleExample() {
 	var (
-		key1 = "key"
-		key2 = 5050
-		key3 = struct{}{}
-
+		key1   = "key"
+		key2   = 5050
+		key3   = struct{}{}
 		value1 = "value"
 		value2 = 88888
 		value3 = struct{}{}
@@ -80,80 +56,4 @@ func simpleExample() {
 	if ok {
 		glg.Info(v6)
 	}
-}
-
-// httpServerExample is server side handler cache example
-func httpServerExample(w http.ResponseWriter, r *http.Request) {
-
-	sc, ok := gache.SGet(r) // get server side cache
-
-	// if cached data already exist, return cached data
-	if ok {
-		glg.Info("cached Response")
-		/*
-			sc contains the following members
-				Status int
-				Header http.Header
-				Body   []byte
-		*/
-		w.WriteHeader(sc.Status)
-		w.Write(sc.Body)
-		return
-	}
-
-	var body []byte
-
-	// TODO: do something
-	body = []byte("Hello gache Cache Sample")
-
-	// store the response data to cache
-	go func() {
-		err := gache.SSet(r, http.StatusOK, nil, body) // set server side cache
-
-		if err != nil {
-			log.Println(err)
-		}
-		glg.Info("Response cached")
-	}()
-
-	w.WriteHeader(http.StatusOK)
-	w.Write(body)
-}
-
-// httpClientExample is http client side cache example
-func httpClientExample() *http.Response {
-
-	req, err := http.NewRequest(http.MethodGet, "https://github.com/kpango", nil)
-
-	if err != nil {
-		log.Println(err)
-		return nil
-	}
-
-	// get client side cache
-	cc, ok := gache.CGet(req)
-
-	var res *http.Response
-
-	// if cached data already exist, return cached data
-	if ok {
-		/*
-			sc contains the following members
-				Etag         string
-				expire       time.Time
-				LastModified string
-				Res          *http.Response
-		*/
-		return cc.Res
-	}
-
-	res, err = http.DefaultClient.Do(req)
-	if err != nil {
-		log.Println(err)
-		return nil
-	}
-	// store client side response data to cache
-	go gache.CSet(req, res)
-
-	return res
 }
