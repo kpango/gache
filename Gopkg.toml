@@ -38,12 +38,24 @@
   version = "1.1.0"
 
 [[constraint]]
+  name = "github.com/coocood/freecache"
+  version = "1.0.1"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/hlts2/gocache"
+
+[[constraint]]
   name = "github.com/kpango/glg"
   version = "1.2.1"
 
 [[constraint]]
   name = "github.com/patrickmn/go-cache"
   version = "2.1.0"
+
+[[constraint]]
+  branch = "master"
+  name = "golang.org/x/sync"
 
 [prune]
   go-tests = true

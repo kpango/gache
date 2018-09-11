@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cespare/xxhash"
+	"golang.org/x/sync/singleflight"
 )
 
 type (
@@ -19,6 +20,9 @@ type (
 		Get(string) (interface{}, bool)
 		Set(string, interface{})
 		SetDefaultExpire(time.Duration) Gache
+		SetExpiredHook(f func(context.Context, string)) Gache
+		EnableExpiredHook() Gache
+		DisableExpiredHook() Gache
 		SetWithExpire(string, interface{}, time.Duration)
 		StartExpired(context.Context, time.Duration) Gache
 		ToMap(context.Context) *sync.Map
@@ -26,10 +30,13 @@ type (
 
 	// gache is base instance type
 	gache struct {
-		l      uint64
-		shards [255]*shard
-		data   *sync.Map
-		expire *atomic.Value
+		l              uint64
+		shards         [255]*shard
+		expire         *atomic.Value
+		expFuncEnabled bool
+		expFunc        func(context.Context, string)
+		expChan        chan string
+		expGroup       singleflight.Group
 	}
 
 	shard struct {
@@ -89,8 +96,41 @@ func (g *gache) SetDefaultExpire(ex time.Duration) Gache {
 }
 
 // SetDefaultExpire set expire duration
-func SetDefaultExpire(ex time.Duration) {
-	instance.SetDefaultExpire(ex)
+func SetDefaultExpire(ex time.Duration) Gache {
+	return instance.SetDefaultExpire(ex)
+}
+
+// EnableExpiredHook enables expired hook function
+func (g *gache) EnableExpiredHook() Gache {
+	g.expFuncEnabled = true
+	return g
+}
+
+// EnableExpiredHook enables expired hook function
+func EnableExpiredHook() Gache {
+	return instance.EnableExpiredHook()
+}
+
+// DisableExpiredHook disables expired hook function
+func (g *gache) DisableExpiredHook() Gache {
+	g.expFuncEnabled = false
+	return g
+}
+
+// DisableExpiredHook disables expired hook function
+func DisableExpiredHook() Gache {
+	return instance.DisableExpiredHook()
+}
+
+// SetExpiredHook set expire hooked function
+func (g *gache) SetExpiredHook(f func(context.Context, string)) Gache {
+	g.expFunc = f
+	return g
+}
+
+// SetExpiredHook set expire hooked function
+func SetExpiredHook(f func(context.Context, string)) Gache {
+	return instance.SetExpiredHook(f)
 }
 
 // StartExpired starts delete expired value daemon
@@ -104,6 +144,8 @@ func (g *gache) StartExpired(ctx context.Context, dur time.Duration) Gache {
 				return
 			case <-tick.C:
 				g.DeleteExpired(ctx)
+			case key := <-g.expChan:
+				go g.expFunc(ctx, key)
 			}
 		}
 	}()
@@ -138,7 +180,7 @@ func (g *gache) get(key string) (interface{}, bool) {
 	d, ok := v.(*value)
 
 	if !ok || !d.isValid() {
-		shard.Delete(key)
+		g.expiration(key)
 		return nil, false
 	}
 
@@ -197,6 +239,16 @@ func Delete(key string) {
 	instance.Delete(key)
 }
 
+func (g *gache) expiration(key string) {
+	g.expGroup.Do(key, func() (interface{}, error) {
+		g.Delete(key)
+		if !g.expFuncEnabled {
+			g.expChan <- key
+		}
+		return nil, nil
+	})
+}
+
 // DeleteExpired deletes expired value from Gache it can be cancel using context
 func (g *gache) DeleteExpired(ctx context.Context) <-chan uint64 {
 	ch := make(chan uint64)
@@ -213,7 +265,7 @@ func (g *gache) DeleteExpired(ctx context.Context) <-chan uint64 {
 					default:
 						d, ok := v.(*value)
 						if ok && !d.isValid() {
-							g.Delete(k.(string))
+							g.expiration(k.(string))
 							atomic.StoreUint64(rows, atomic.AddUint64(rows, 1))
 						}
 						return false
@@ -249,7 +301,7 @@ func (g *gache) Foreach(ctx context.Context, f func(string, interface{}, int64) 
 						if d.isValid() {
 							return f(k.(string), *d.val, d.expire)
 						}
-						g.Delete(k.(string))
+						g.expiration(k.(string))
 					}
 					return false
 				}
@@ -276,11 +328,9 @@ func (g *gache) getShard(key string) *sync.Map {
 
 // Clear deletes all key and value present in the Gache.
 func (g *gache) Clear() {
-	g.data.Range(func(key, _ interface{}) bool {
-		g.data.Delete(key)
-		return true
-	})
-	g.data = new(sync.Map)
+	for i := range g.shards {
+		g.shards[i] = &shard{data: new(sync.Map)}
+	}
 }
 
 // Clear deletes all key and value present in the Gache.

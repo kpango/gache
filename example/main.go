@@ -9,9 +9,9 @@ import (
 
 func main() {
 	var (
-		key1   = "key"
-		key2   = 5050
-		key3   = struct{}{}
+		key1   = "key1"
+		key2   = "key2"
+		key3   = "key3"
 		value1 = "value"
 		value2 = 88888
 		value3 = struct{}{}

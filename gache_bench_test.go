@@ -7,6 +7,8 @@ import (
 
 	"github.com/allegro/bigcache"
 	"github.com/bluele/gcache"
+	"github.com/coocood/freecache"
+	"github.com/hlts2/gocache"
 	cache "github.com/patrickmn/go-cache"
 )
 
@@ -188,6 +190,48 @@ func BenchmarkGCacheARC(b *testing.B) {
 				val, err := gc.Get(k)
 				if err != nil {
 					b.Errorf("GCache Get failed key: %v\tval: %v\n", k, v)
+				}
+				if val != v {
+					b.Errorf("expect %v but got %v", v, val)
+				}
+			}
+		}
+	})
+}
+
+func BenchmarkFreeCache(b *testing.B) {
+	fc := freecache.NewCache(100 * 1024 * 1024)
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for k, v := range data {
+				fc.Set([]byte(k), []byte(v), 0)
+				val, err := fc.Get([]byte(k))
+				if err != nil {
+					b.Errorf("FreeCache Get failed key: %v\tval: %v\n", k, v)
+					b.Error(err)
+				}
+
+				if string(val) != v {
+					b.Errorf("expect %v but got %v", v, val)
+				}
+			}
+		}
+	})
+}
+
+func BenchmarkGocache(b *testing.B) {
+	gc := gocache.New()
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for k, v := range data {
+				gc.Set(k, v)
+				val, ok := gc.Get(k)
+				if !ok {
+					b.Errorf("GoCache Get failed key: %v\tval: %v\n", k, v)
 				}
 				if val != v {
 					b.Errorf("expect %v but got %v", v, val)

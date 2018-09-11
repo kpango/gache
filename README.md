@@ -38,7 +38,7 @@ go get github.com/kpango/gache
 ```
 ## Benchmarks
 
-[gache](https://github.com/kpango/gache) vs [normal map with lock](https://github.com/kpango/gache/blob/master/gache_bench_test.go#L13-L35) vs [bigcache](https://github.com/allegro/bigcache) vs [go-cache](https://github.com/patrickmn/go-cache) vs [gcache](https://github.com/bluele/gcache)
+[gache](https://github.com/kpango/gache) vs [normal map with lock](https://github.com/kpango/gache/blob/master/gache_bench_test.go#L13-L35) vs [bigcache](https://github.com/allegro/bigcache) vs [go-cache](https://github.com/patrickmn/go-cache) vs [gcache](https://github.com/bluele/gcache) vs [freecache](https://github.com/coocood/freecache) vs [gocache](https://github.com/hlts2/gocache)
 
 ![Bench](https://github.com/kpango/gache/raw/master/images/bench.png)
 
