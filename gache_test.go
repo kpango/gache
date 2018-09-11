@@ -84,6 +84,8 @@ func Test_value_isValid(t *testing.T) {
 
 func Test_gache_SetDefaultExpire(t *testing.T) {
 	type fields struct {
+		l      uint64
+		shards [255]*shard
 		data   *sync.Map
 		expire *atomic.Value
 	}
@@ -101,6 +103,8 @@ func Test_gache_SetDefaultExpire(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
@@ -130,6 +134,8 @@ func TestSetDefaultExpire(t *testing.T) {
 
 func Test_gache_StartExpired(t *testing.T) {
 	type fields struct {
+		l      uint64
+		shards [255]*shard
 		data   *sync.Map
 		expire *atomic.Value
 	}
@@ -148,6 +154,8 @@ func Test_gache_StartExpired(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
@@ -160,23 +168,31 @@ func Test_gache_StartExpired(t *testing.T) {
 
 func Test_gache_ToMap(t *testing.T) {
 	type fields struct {
+		l      uint64
+		shards [255]*shard
 		data   *sync.Map
 		expire *atomic.Value
+	}
+	type args struct {
+		ctx context.Context
 	}
 	tests := []struct {
 		name   string
 		fields fields
-		want   map[interface{}]interface{}
+		args   args
+		want   *sync.Map
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
-			if got := g.ToMap(); !reflect.DeepEqual(got, tt.want) {
+			if got := g.ToMap(tt.args.ctx); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("gache.ToMap() = %v, want %v", got, tt.want)
 			}
 		})
@@ -184,15 +200,19 @@ func Test_gache_ToMap(t *testing.T) {
 }
 
 func TestToMap(t *testing.T) {
+	type args struct {
+		ctx context.Context
+	}
 	tests := []struct {
 		name string
-		want map[interface{}]interface{}
+		args args
+		want *sync.Map
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ToMap(); !reflect.DeepEqual(got, tt.want) {
+			if got := ToMap(tt.args.ctx); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("ToMap() = %v, want %v", got, tt.want)
 			}
 		})
@@ -201,11 +221,13 @@ func TestToMap(t *testing.T) {
 
 func Test_gache_get(t *testing.T) {
 	type fields struct {
+		l      uint64
+		shards [255]*shard
 		data   *sync.Map
 		expire *atomic.Value
 	}
 	type args struct {
-		key interface{}
+		key string
 	}
 	tests := []struct {
 		name   string
@@ -219,6 +241,8 @@ func Test_gache_get(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
@@ -235,11 +259,13 @@ func Test_gache_get(t *testing.T) {
 
 func Test_gache_Get(t *testing.T) {
 	type fields struct {
+		l      uint64
+		shards [255]*shard
 		data   *sync.Map
 		expire *atomic.Value
 	}
 	type args struct {
-		key interface{}
+		key string
 	}
 	tests := []struct {
 		name   string
@@ -253,6 +279,8 @@ func Test_gache_Get(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
@@ -269,7 +297,7 @@ func Test_gache_Get(t *testing.T) {
 
 func TestGet(t *testing.T) {
 	type args struct {
-		key interface{}
+		key string
 	}
 	tests := []struct {
 		name  string
@@ -294,11 +322,13 @@ func TestGet(t *testing.T) {
 
 func Test_gache_set(t *testing.T) {
 	type fields struct {
+		l      uint64
+		shards [255]*shard
 		data   *sync.Map
 		expire *atomic.Value
 	}
 	type args struct {
-		key    interface{}
+		key    string
 		val    interface{}
 		expire time.Duration
 	}
@@ -312,6 +342,8 @@ func Test_gache_set(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
@@ -322,11 +354,13 @@ func Test_gache_set(t *testing.T) {
 
 func Test_gache_SetWithExpire(t *testing.T) {
 	type fields struct {
+		l      uint64
+		shards [255]*shard
 		data   *sync.Map
 		expire *atomic.Value
 	}
 	type args struct {
-		key    interface{}
+		key    string
 		val    interface{}
 		expire time.Duration
 	}
@@ -340,6 +374,8 @@ func Test_gache_SetWithExpire(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
@@ -348,36 +384,9 @@ func Test_gache_SetWithExpire(t *testing.T) {
 	}
 }
 
-func Test_gache_Set(t *testing.T) {
-	type fields struct {
-		data   *sync.Map
-		expire *atomic.Value
-	}
-	type args struct {
-		key interface{}
-		val interface{}
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := &gache{
-				data:   tt.fields.data,
-				expire: tt.fields.expire,
-			}
-			g.Set(tt.args.key, tt.args.val)
-		})
-	}
-}
-
 func TestSetWithExpire(t *testing.T) {
 	type args struct {
-		key    interface{}
+		key    string
 		val    interface{}
 		expire time.Duration
 	}
@@ -394,9 +403,40 @@ func TestSetWithExpire(t *testing.T) {
 	}
 }
 
+func Test_gache_Set(t *testing.T) {
+	type fields struct {
+		l      uint64
+		shards [255]*shard
+		data   *sync.Map
+		expire *atomic.Value
+	}
+	type args struct {
+		key string
+		val interface{}
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
+				data:   tt.fields.data,
+				expire: tt.fields.expire,
+			}
+			g.Set(tt.args.key, tt.args.val)
+		})
+	}
+}
+
 func TestSet(t *testing.T) {
 	type args struct {
-		key interface{}
+		key string
 		val interface{}
 	}
 	tests := []struct {
@@ -414,11 +454,13 @@ func TestSet(t *testing.T) {
 
 func Test_gache_Delete(t *testing.T) {
 	type fields struct {
+		l      uint64
+		shards [255]*shard
 		data   *sync.Map
 		expire *atomic.Value
 	}
 	type args struct {
-		key interface{}
+		key string
 	}
 	tests := []struct {
 		name   string
@@ -430,6 +472,8 @@ func Test_gache_Delete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
@@ -440,7 +484,7 @@ func Test_gache_Delete(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	type args struct {
-		key interface{}
+		key string
 	}
 	tests := []struct {
 		name string
@@ -457,6 +501,8 @@ func TestDelete(t *testing.T) {
 
 func Test_gache_DeleteExpired(t *testing.T) {
 	type fields struct {
+		l      uint64
+		shards [255]*shard
 		data   *sync.Map
 		expire *atomic.Value
 	}
@@ -467,13 +513,15 @@ func Test_gache_DeleteExpired(t *testing.T) {
 		name   string
 		fields fields
 		args   args
-		want   <-chan int
+		want   <-chan uint64
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
@@ -491,7 +539,7 @@ func TestDeleteExpired(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want <-chan int
+		want <-chan uint64
 	}{
 		// TODO: Add test cases.
 	}
@@ -506,11 +554,14 @@ func TestDeleteExpired(t *testing.T) {
 
 func Test_gache_Foreach(t *testing.T) {
 	type fields struct {
+		l      uint64
+		shards [255]*shard
 		data   *sync.Map
 		expire *atomic.Value
 	}
 	type args struct {
-		f func(interface{}, interface{}, int64) bool
+		ctx context.Context
+		f   func(string, interface{}, int64) bool
 	}
 	tests := []struct {
 		name   string
@@ -523,10 +574,12 @@ func Test_gache_Foreach(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
-			if got := g.Foreach(tt.args.f); !reflect.DeepEqual(got, tt.want) {
+			if got := g.Foreach(tt.args.ctx, tt.args.f); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("gache.Foreach() = %v, want %v", got, tt.want)
 			}
 		})
@@ -535,7 +588,8 @@ func Test_gache_Foreach(t *testing.T) {
 
 func TestForeach(t *testing.T) {
 	type args struct {
-		f func(interface{}, interface{}, int64) bool
+		ctx context.Context
+		f   func(string, interface{}, int64) bool
 	}
 	tests := []struct {
 		name string
@@ -546,8 +600,74 @@ func TestForeach(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := Foreach(tt.args.f); !reflect.DeepEqual(got, tt.want) {
+			if got := Foreach(tt.args.ctx, tt.args.f); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Foreach() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_gache_selectShard(t *testing.T) {
+	type fields struct {
+		l      uint64
+		shards [255]*shard
+		data   *sync.Map
+		expire *atomic.Value
+	}
+	type args struct {
+		key string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   uint64
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
+				data:   tt.fields.data,
+				expire: tt.fields.expire,
+			}
+			if got := g.selectShard(tt.args.key); got != tt.want {
+				t.Errorf("gache.selectShard() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_gache_getShard(t *testing.T) {
+	type fields struct {
+		l      uint64
+		shards [255]*shard
+		data   *sync.Map
+		expire *atomic.Value
+	}
+	type args struct {
+		key string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   *sync.Map
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
+				data:   tt.fields.data,
+				expire: tt.fields.expire,
+			}
+			if got := g.getShard(tt.args.key); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("gache.getShard() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -555,6 +675,8 @@ func TestForeach(t *testing.T) {
 
 func Test_gache_Clear(t *testing.T) {
 	type fields struct {
+		l      uint64
+		shards [255]*shard
 		data   *sync.Map
 		expire *atomic.Value
 	}
@@ -567,6 +689,8 @@ func Test_gache_Clear(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &gache{
+				l:      tt.fields.l,
+				shards: tt.fields.shards,
 				data:   tt.fields.data,
 				expire: tt.fields.expire,
 			}
