@@ -50,6 +50,10 @@
   name = "github.com/hlts2/gocache"
 
 [[constraint]]
+  branch = "master"
+  name = "github.com/kpango/fastime"
+
+[[constraint]]
   name = "github.com/kpango/glg"
   version = "1.2.1"
 

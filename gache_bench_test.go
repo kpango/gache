@@ -471,13 +471,33 @@ func BenchmarkBigCacheWithBigDataset(b *testing.B) {
 	})
 }
 
-func BenchmarkMCache(b *testing.B) {
+func BenchmarkMCacheWithSmallDataset(b *testing.B) {
 	mc := mcache.StartInstance()
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			for k, v := range data {
+			for k, v := range smallData {
+				mc.SetPointer(k, v, time.Second*30)
+				val, ok := mc.GetPointer(k)
+				if !ok {
+					b.Errorf("mcache Get failed key: %v\tval: %v\n", k, v)
+				}
+				if val.(string) != v {
+					b.Errorf("expect %v but got %v", v, val.(string))
+				}
+			}
+		}
+	})
+}
+
+func BenchmarkMCacheWithBigDataset(b *testing.B) {
+	mc := mcache.StartInstance()
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for k, v := range bigData {
 				mc.SetPointer(k, v, time.Second*30)
 				val, ok := mc.GetPointer(k)
 				if !ok {
