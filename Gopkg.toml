@@ -26,6 +26,10 @@
 
 
 [[constraint]]
+  branch = "master"
+  name = "github.com/OrlovEvgeny/go-mcache"
+
+[[constraint]]
   name = "github.com/allegro/bigcache"
   version = "1.1.0"
 
