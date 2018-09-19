@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cespare/xxhash"
+	"github.com/kpango/fastime"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -86,7 +87,7 @@ func GetGache() Gache {
 
 // isValid checks expiration of value
 func (v *value) isValid() bool {
-	return v.expire == 0 || time.Now().UnixNano() < v.expire
+	return v.expire == 0 || fastime.Now().UnixNano() < v.expire
 }
 
 // SetDefaultExpire set expire duration
@@ -201,7 +202,7 @@ func Get(key string) (interface{}, bool) {
 func (g *gache) set(key string, val interface{}, expire time.Duration) {
 	var exp int64
 	if expire > 0 {
-		exp = time.Now().Add(expire).UnixNano()
+		exp = fastime.Now().Add(expire).UnixNano()
 	}
 	g.getShard(key).Store(key, &value{
 		expire: exp,
