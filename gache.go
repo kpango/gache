@@ -242,7 +242,7 @@ func Delete(key string) {
 func (g *gache) expiration(key string) {
 	g.expGroup.Do(key, func() (interface{}, error) {
 		g.Delete(key)
-		if !g.expFuncEnabled {
+		if g.expFuncEnabled {
 			g.expChan <- key
 		}
 		return nil, nil
@@ -266,7 +266,7 @@ func (g *gache) DeleteExpired(ctx context.Context) <-chan uint64 {
 						d, ok := v.(*value)
 						if ok && !d.isValid() {
 							g.expiration(k.(string))
-							atomic.StoreUint64(rows, atomic.AddUint64(rows, 1))
+							atomic.AddUint64(rows, 1)
 						}
 						return false
 					}
