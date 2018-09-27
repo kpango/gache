@@ -67,7 +67,8 @@ func New() Gache {
 // newGache returns *gache instance
 func newGache() *gache {
 	g := &gache{
-		expire: new(atomic.Value),
+		expire:  new(atomic.Value),
+		expChan: make(chan string, 1000),
 	}
 	g.l = uint64(len(g.shards))
 	for i := range g.shards {
@@ -257,23 +258,33 @@ func (g *gache) DeleteExpired(ctx context.Context) <-chan uint64 {
 		wg := new(sync.WaitGroup)
 		rows := new(uint64)
 		for i := range g.shards {
-			wg.Add(1)
-			go func(c context.Context) {
-				g.shards[i].data.Range(func(k, v interface{}) bool {
+			g.shards[i].data.Range(func(k, v interface{}) bool {
+				result := make(chan bool)
+				wg.Add(1)
+				go func(c context.Context) {
 					select {
 					case <-c.Done():
-						return false
+						wg.Done()
+						result <- false
+						return
 					default:
 						d, ok := v.(*value)
-						if ok && !d.isValid() {
-							g.expiration(k.(string))
-							atomic.AddUint64(rows, 1)
+						if ok {
+							if !d.isValid() {
+								g.expiration(k.(string))
+								atomic.AddUint64(rows, 1)
+							}
+							result <- true
+							wg.Done()
+							return
 						}
-						return false
+						result <- false
+						wg.Done()
+						return
 					}
-				})
-				wg.Done()
-			}(ctx)
+				}(ctx)
+				return <-result
+			})
 		}
 		wg.Wait()
 		ch <- atomic.LoadUint64(rows)
@@ -290,25 +301,22 @@ func DeleteExpired(ctx context.Context) <-chan uint64 {
 func (g *gache) Foreach(ctx context.Context, f func(string, interface{}, int64) bool) Gache {
 	wg := new(sync.WaitGroup)
 	for _, shard := range g.shards {
-		wg.Add(1)
-		go func(c context.Context) {
-			shard.data.Range(func(k, v interface{}) bool {
-				select {
-				case <-c.Done():
-					return false
-				default:
-					d, ok := v.(*value)
-					if ok {
-						if d.isValid() {
-							return f(k.(string), *d.val, d.expire)
-						}
-						g.expiration(k.(string))
+		shard.data.Range(func(k, v interface{}) bool {
+			select {
+			case <-ctx.Done():
+				return false
+			default:
+				d, ok := v.(*value)
+				if ok {
+					if d.isValid() {
+						return f(k.(string), *d.val, d.expire)
 					}
-					return false
+					g.expiration(k.(string))
+					return true
 				}
-			})
-			wg.Done()
-		}(ctx)
+				return false
+			}
+		})
 	}
 	wg.Wait()
 	return g
