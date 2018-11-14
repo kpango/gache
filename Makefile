@@ -44,5 +44,5 @@ contributors:
 	git log --format='%aN <%aE>' | sort -fu > CONTRIBUTORS
 
 update:
-	glide upgrade
-	glide update
+	rm -rf Gopkg.* vendor
+	dep init
