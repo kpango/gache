@@ -1,7 +1,7 @@
 module github.com/kpango/gache
 
 require (
-	github.com/OrlovEvgeny/go-mcache v0.0.0-20181113222421-bed69649df7d
+	github.com/OrlovEvgeny/go-mcache v0.0.0-20190117015154-154af6d8a4dc
 	github.com/allegro/bigcache v1.1.0
 	github.com/bluele/gcache v0.0.0-20171010155617-472614239ac7
 	github.com/cespare/xxhash v1.1.0
