@@ -9,5 +9,5 @@ require (
 	github.com/hlts2/gocache v0.0.0-20181007125314-e9a99e525ba1
 	github.com/kpango/fastime v1.0.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	golang.org/x/sync v0.0.0-20181108010431-42b317875d0f
+	golang.org/x/sync v0.0.0-20190117024916-37e7f081c4d4
 )
