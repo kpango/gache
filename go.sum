@@ -7,6 +7,7 @@ github.com/bluele/gcache v0.0.0-20171010155617-472614239ac7 h1:NpQ+gkFOH27AyDypS
 github.com/bluele/gcache v0.0.0-20171010155617-472614239ac7/go.mod h1:8c4/i2VlovMO2gBnHGQPN5EJw+H0lx1u/5p+cgsXtCk=
 github.com/cespare/xxhash v1.1.0 h1:a6HrQnmkObjyL+Gs60czilIUGqrzKutQD6XZog3p+ko=
 github.com/cespare/xxhash v1.1.0/go.mod h1:XrSqR1VqqWfGrhpAt58auRo0WTKS1nRRg3ghfAqPWnc=
+github.com/cespare/xxhash/v2 v2.0.0/go.mod h1:MaMeaVDXZNmTpkOyhVs3/WfjgobkbQgfrVnrr3DyZL0=
 github.com/coocood/freecache v1.0.1 h1:oFyo4msX2c0QIKU+kuMJUwsKamJ+AKc2JJrKcMszJ5M=
 github.com/coocood/freecache v1.0.1/go.mod h1:ePwxCDzOYvARfHdr1pByNct1at3CoKnsipOHwKlNbzI=
 github.com/hlts2/gocache v0.0.0-20181007125314-e9a99e525ba1 h1:HyfoKeRGf+UEyr2emroIKYFTrU5W15VaQ2+jMJMD79w=
