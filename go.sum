@@ -1,6 +1,7 @@
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
 github.com/OrlovEvgeny/go-mcache v0.0.0-20181113222421-bed69649df7d h1:C+bJcFiEFeXj3iThSj0LDeKY1moobmwQpIZmkjjjUlY=
 github.com/OrlovEvgeny/go-mcache v0.0.0-20181113222421-bed69649df7d/go.mod h1:HyURA1Z5rjNkt9E7XyiegZk1ZBvvB+1vYzkeu52goIc=
+github.com/OrlovEvgeny/go-mcache v0.0.0-20190117015154-154af6d8a4dc/go.mod h1:HyURA1Z5rjNkt9E7XyiegZk1ZBvvB+1vYzkeu52goIc=
 github.com/allegro/bigcache v1.1.0 h1:MLuIKTjdxDc+qsG2rhjsYjsHQC5LUGjIWzutg7M+W68=
 github.com/allegro/bigcache v1.1.0/go.mod h1:Cb/ax3seSYIx7SuZdm2G2xzfwmv3TPSk2ucNfQESPXM=
 github.com/bluele/gcache v0.0.0-20171010155617-472614239ac7 h1:NpQ+gkFOH27AyDypSCJ/LdsIi/b4rdnEb1N5+IpFfYs=
