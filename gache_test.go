@@ -772,7 +772,7 @@ func Test_gache_DeleteExpired(t *testing.T) {
 		name   string
 		fields fields
 		args   args
-		want   <-chan uint64
+		want   uint64
 	}{
 		// TODO: Add test cases.
 	}
@@ -787,7 +787,7 @@ func Test_gache_DeleteExpired(t *testing.T) {
 				expChan:        tt.fields.expChan,
 				expGroup:       tt.fields.expGroup,
 			}
-			if got := g.DeleteExpired(tt.args.ctx); !reflect.DeepEqual(got, tt.want) {
+			if got := g.DeleteExpired(tt.args.ctx); got != tt.want {
 				t.Errorf("gache.DeleteExpired() = %v, want %v", got, tt.want)
 			}
 		})
@@ -801,13 +801,13 @@ func TestDeleteExpired(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want <-chan uint64
+		want uint64
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := DeleteExpired(tt.args.ctx); !reflect.DeepEqual(got, tt.want) {
+			if got := DeleteExpired(tt.args.ctx); got != tt.want {
 				t.Errorf("DeleteExpired() = %v, want %v", got, tt.want)
 			}
 		})

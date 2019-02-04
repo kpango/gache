@@ -16,7 +16,7 @@ type (
 	Gache interface {
 		Clear()
 		Delete(string)
-		DeleteExpired(ctx context.Context) <-chan uint64
+		DeleteExpired(ctx context.Context) uint64
 		Foreach(context.Context, func(string, interface{}, int64) bool) Gache
 		Get(string) (interface{}, bool)
 		Set(string, interface{})
@@ -252,71 +252,64 @@ func (g *gache) expiration(key string) {
 }
 
 // DeleteExpired deletes expired value from Gache it can be cancel using context
-func (g *gache) DeleteExpired(ctx context.Context) <-chan uint64 {
-	ch := make(chan uint64)
-	go func() {
-		wg := new(sync.WaitGroup)
-		rows := new(uint64)
-		for i := range g.shards {
-			g.shards[i].data.Range(func(k, v interface{}) bool {
-				result := make(chan bool)
-				wg.Add(1)
-				go func(c context.Context) {
-					select {
-					case <-c.Done():
-						wg.Done()
-						result <- false
-						return
-					default:
-						d, ok := v.(*value)
-						if ok {
-							if !d.isValid() {
-								g.expiration(k.(string))
-								atomic.AddUint64(rows, 1)
-							}
-							result <- true
-							wg.Done()
-							return
+func (g *gache) DeleteExpired(ctx context.Context) uint64 {
+	wg := new(sync.WaitGroup)
+	var rows uint64
+	for i := range g.shards {
+		wg.Add(1)
+		go func(c context.Context, idx int) {
+			defer wg.Done()
+			g.shards[idx].data.Range(func(k, v interface{}) bool {
+				select {
+				case <-c.Done():
+					return false
+				default:
+					d, ok := v.(*value)
+					if ok {
+						if !d.isValid() {
+							g.expiration(k.(string))
+							atomic.AddUint64(&rows, 1)
 						}
-						result <- false
-						wg.Done()
-						return
+						return true
 					}
-				}(ctx)
-				return <-result
+					return false
+				}
 			})
-		}
-		wg.Wait()
-		ch <- atomic.LoadUint64(rows)
-	}()
-	return ch
+		}(ctx, i)
+	}
+	wg.Wait()
+	return atomic.LoadUint64(&rows)
 }
 
 // DeleteExpired deletes expired value from Gache it can be cancel using context
-func DeleteExpired(ctx context.Context) <-chan uint64 {
+func DeleteExpired(ctx context.Context) uint64 {
 	return instance.DeleteExpired(ctx)
 }
 
 // Foreach calls f sequentially for each key and value present in the Gache.
 func (g *gache) Foreach(ctx context.Context, f func(string, interface{}, int64) bool) Gache {
 	wg := new(sync.WaitGroup)
-	for _, shard := range g.shards {
-		shard.data.Range(func(k, v interface{}) bool {
-			select {
-			case <-ctx.Done():
-				return false
-			default:
-				d, ok := v.(*value)
-				if ok {
-					if d.isValid() {
-						return f(k.(string), *d.val, d.expire)
+	for i := range g.shards {
+		wg.Add(1)
+		go func(c context.Context, idx int) {
+			defer wg.Done()
+			g.shards[i].data.Range(func(k, v interface{}) bool {
+				select {
+				case <-c.Done():
+					return false
+				default:
+					d, ok := v.(*value)
+					if ok {
+						if d.isValid() {
+							return f(k.(string), *d.val, d.expire)
+						}
+						g.expiration(k.(string))
+						return true
 					}
-					g.expiration(k.(string))
-					return true
+					return false
 				}
-				return false
-			}
-		})
+			})
+		}(ctx, i)
 	}
 	wg.Wait()
 	return g
