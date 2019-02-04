@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 	"github.com/kpango/fastime"
 	"golang.org/x/sync/singleflight"
 )
@@ -88,7 +88,7 @@ func GetGache() Gache {
 
 // isValid checks expiration of value
 func (v *value) isValid() bool {
-	return v.expire == 0 || fastime.Now().UnixNano() < v.expire
+	return v.expire == 0 || fastime.UnixNanoNow() < v.expire
 }
 
 // SetDefaultExpire set expire duration
@@ -172,8 +172,7 @@ func ToMap(ctx context.Context) *sync.Map {
 
 // get returns value & exists from key
 func (g *gache) get(key string) (interface{}, bool) {
-	shard := g.getShard(key)
-	v, ok := shard.Load(key)
+	v, ok := g.getShard(key).Load(key)
 
 	if !ok {
 		return nil, false
@@ -203,7 +202,7 @@ func Get(key string) (interface{}, bool) {
 func (g *gache) set(key string, val interface{}, expire time.Duration) {
 	var exp int64
 	if expire > 0 {
-		exp = fastime.Now().Add(expire).UnixNano()
+		exp = fastime.UnixNanoNow() + int64(expire)
 	}
 	g.getShard(key).Store(key, &value{
 		expire: exp,
@@ -293,7 +292,7 @@ func (g *gache) Foreach(ctx context.Context, f func(string, interface{}, int64) 
 		wg.Add(1)
 		go func(c context.Context, idx int) {
 			defer wg.Done()
-			g.shards[i].data.Range(func(k, v interface{}) bool {
+			g.shards[idx].data.Range(func(k, v interface{}) bool {
 				select {
 				case <-c.Done():
 					return false
