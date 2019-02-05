@@ -4,7 +4,6 @@ import (
 	"context"
 	"reflect"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -88,7 +87,7 @@ func Test_gache_SetDefaultExpire(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -147,7 +146,7 @@ func Test_gache_EnableExpiredHook(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -198,7 +197,7 @@ func Test_gache_DisableExpiredHook(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -249,7 +248,7 @@ func Test_gache_SetExpiredHook(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -308,7 +307,7 @@ func Test_gache_StartExpired(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -348,7 +347,7 @@ func Test_gache_ToMap(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -407,7 +406,7 @@ func Test_gache_get(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -451,7 +450,7 @@ func Test_gache_Get(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -520,7 +519,7 @@ func Test_gache_set(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -529,7 +528,7 @@ func Test_gache_set(t *testing.T) {
 	type args struct {
 		key    string
 		val    interface{}
-		expire time.Duration
+		expire int64
 	}
 	tests := []struct {
 		name   string
@@ -558,7 +557,7 @@ func Test_gache_SetWithExpire(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -615,7 +614,7 @@ func Test_gache_Set(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -670,7 +669,7 @@ func Test_gache_Delete(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -723,7 +722,7 @@ func Test_gache_expiration(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -759,7 +758,7 @@ func Test_gache_DeleteExpired(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -818,7 +817,7 @@ func Test_gache_Foreach(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -879,7 +878,7 @@ func Test_gache_Clear(t *testing.T) {
 	type fields struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string

@@ -34,7 +34,7 @@ type (
 	gache struct {
 		l              uint64
 		shards         [255]*sync.Map
-		expire         *atomic.Value
+		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
@@ -64,14 +64,13 @@ func New() Gache {
 // newGache returns *gache instance
 func newGache() *gache {
 	g := &gache{
-		expire:  new(atomic.Value),
+		expire:  int64(time.Second * 30),
 		expChan: make(chan string, 1000),
 	}
 	g.l = uint64(len(g.shards))
 	for i := range g.shards {
 		g.shards[i] = new(sync.Map)
 	}
-	g.expire.Store(time.Second * 30)
 	return g
 }
 
@@ -90,7 +89,7 @@ func (v *value) isValid() bool {
 
 // SetDefaultExpire set expire duration
 func (g *gache) SetDefaultExpire(ex time.Duration) Gache {
-	g.expire.Store(ex)
+	atomic.StoreInt64(&g.expire, *(*int64)(unsafe.Pointer(&ex)))
 	return g
 }
 
@@ -196,31 +195,31 @@ func Get(key string) (interface{}, bool) {
 }
 
 // set sets key-value & expiration to Gache
-func (g *gache) set(key string, val interface{}, expire time.Duration) {
+func (g *gache) set(key string, val interface{}, expire int64) {
 	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))%g.l].Store(key, &value{
-		expire: fastime.UnixNanoNow() + *(*int64)(unsafe.Pointer(&expire)),
+		expire: fastime.UnixNanoNow() + expire,
 		val:    &val,
 	})
 }
 
 // SetWithExpire sets key-value & expiration to Gache
 func (g *gache) SetWithExpire(key string, val interface{}, expire time.Duration) {
-	g.set(key, val, expire)
+	g.set(key, val, *(*int64)(unsafe.Pointer(&expire)))
 }
 
 // SetWithExpire sets key-value & expiration to Gache
 func SetWithExpire(key string, val interface{}, expire time.Duration) {
-	instance.set(key, val, expire)
+	instance.set(key, val, *(*int64)(unsafe.Pointer(&expire)))
 }
 
 // Set sets key-value to Gache using default expiration
 func (g *gache) Set(key string, val interface{}) {
-	g.set(key, val, g.expire.Load().(time.Duration))
+	g.set(key, val, atomic.LoadInt64(&g.expire))
 }
 
 // Set sets key-value to Gache using default expiration
 func Set(key string, val interface{}) {
-	instance.set(key, val, instance.expire.Load().(time.Duration))
+	instance.set(key, val, atomic.LoadInt64(&instance.expire))
 }
 
 // Delete deletes value from Gache using key
