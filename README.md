@@ -3,7 +3,7 @@
 gache is thinnest cache library for go application
 
 ## Requirement
-Go 1.9
+Go 1.11
 
 ## Installation
 ```shell
