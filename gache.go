@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/kpango/fastime"
@@ -32,16 +33,12 @@ type (
 	// gache is base instance type
 	gache struct {
 		l              uint64
-		shards         [255]*shard
+		shards         [255]*sync.Map
 		expire         *atomic.Value
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
 		expChan        chan string
 		expGroup       singleflight.Group
-	}
-
-	shard struct {
-		data *sync.Map
 	}
 
 	value struct {
@@ -72,7 +69,7 @@ func newGache() *gache {
 	}
 	g.l = uint64(len(g.shards))
 	for i := range g.shards {
-		g.shards[i] = &shard{data: new(sync.Map)}
+		g.shards[i] = new(sync.Map)
 	}
 	g.expire.Store(time.Second * 30)
 	return g
@@ -158,7 +155,7 @@ func (g *gache) StartExpired(ctx context.Context, dur time.Duration) Gache {
 func (g *gache) ToMap(ctx context.Context) *sync.Map {
 	m := new(sync.Map)
 	g.Foreach(ctx, func(key string, val interface{}, exp int64) bool {
-		m.Store(key, val)
+		go m.Store(key, val)
 		return true
 	})
 
@@ -172,7 +169,7 @@ func ToMap(ctx context.Context) *sync.Map {
 
 // get returns value & exists from key
 func (g *gache) get(key string) (interface{}, bool) {
-	v, ok := g.getShard(key).Load(key)
+	v, ok := g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))%g.l].Load(key)
 
 	if !ok {
 		return nil, false
@@ -200,12 +197,8 @@ func Get(key string) (interface{}, bool) {
 
 // set sets key-value & expiration to Gache
 func (g *gache) set(key string, val interface{}, expire time.Duration) {
-	var exp int64
-	if expire > 0 {
-		exp = fastime.UnixNanoNow() + int64(expire)
-	}
-	g.getShard(key).Store(key, &value{
-		expire: exp,
+	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))%g.l].Store(key, &value{
+		expire: fastime.UnixNanoNow() + *(*int64)(unsafe.Pointer(&expire)),
 		val:    &val,
 	})
 }
@@ -232,7 +225,7 @@ func Set(key string, val interface{}) {
 
 // Delete deletes value from Gache using key
 func (g *gache) Delete(key string) {
-	g.getShard(key).Delete(key)
+	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))%g.l].Delete(key)
 }
 
 // Delete deletes value from Gache using key
@@ -258,7 +251,7 @@ func (g *gache) DeleteExpired(ctx context.Context) uint64 {
 		wg.Add(1)
 		go func(c context.Context, idx int) {
 			defer wg.Done()
-			g.shards[idx].data.Range(func(k, v interface{}) bool {
+			g.shards[idx].Range(func(k, v interface{}) bool {
 				select {
 				case <-c.Done():
 					return false
@@ -292,7 +285,7 @@ func (g *gache) Foreach(ctx context.Context, f func(string, interface{}, int64) 
 		wg.Add(1)
 		go func(c context.Context, idx int) {
 			defer wg.Done()
-			g.shards[idx].data.Range(func(k, v interface{}) bool {
+			g.shards[idx].Range(func(k, v interface{}) bool {
 				select {
 				case <-c.Done():
 					return false
@@ -319,18 +312,10 @@ func Foreach(ctx context.Context, f func(string, interface{}, int64) bool) Gache
 	return instance.Foreach(ctx, f)
 }
 
-func (g *gache) selectShard(key string) uint64 {
-	return xxhash.Sum64String(key)
-}
-
-func (g *gache) getShard(key string) *sync.Map {
-	return g.shards[g.selectShard(key)%g.l].data
-}
-
 // Clear deletes all key and value present in the Gache.
 func (g *gache) Clear() {
 	for i := range g.shards {
-		g.shards[i] = &shard{data: new(sync.Map)}
+		g.shards[i] = new(sync.Map)
 	}
 }
 
