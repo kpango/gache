@@ -84,7 +84,6 @@ func randStr(n int) string {
 }
 
 func BenchmarkGacheWithSmallDataset(b *testing.B) {
-	New()
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -104,7 +103,6 @@ func BenchmarkGacheWithSmallDataset(b *testing.B) {
 }
 
 func BenchmarkGacheWithBigDataset(b *testing.B) {
-	New()
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
