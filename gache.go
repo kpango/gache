@@ -291,11 +291,11 @@ func (g *gache) Foreach(ctx context.Context, f func(string, interface{}, int64) 
 				default:
 					d, ok := v.(*value)
 					if ok {
-						if d.isValid() {
-							return f(k.(string), *d.val, d.expire)
+						if !d.isValid() {
+							g.expiration(k.(string))
+							return true
 						}
-						g.expiration(k.(string))
-						return true
+						return f(k.(string), *d.val, d.expire)
 					}
 					return false
 				}
