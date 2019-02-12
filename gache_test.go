@@ -1,7 +1,9 @@
 package gache
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"reflect"
 	"sync"
 	"testing"
@@ -397,6 +399,65 @@ func TestToMap(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := ToMap(tt.args.ctx); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("ToMap() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_gache_ToRawMap(t *testing.T) {
+	type fields struct {
+		l              uint64
+		shards         [255]*sync.Map
+		expire         int64
+		expFuncEnabled bool
+		expFunc        func(context.Context, string)
+		expChan        chan string
+		expGroup       singleflight.Group
+	}
+	type args struct {
+		ctx context.Context
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   map[string]interface{}
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &gache{
+				l:              tt.fields.l,
+				shards:         tt.fields.shards,
+				expire:         tt.fields.expire,
+				expFuncEnabled: tt.fields.expFuncEnabled,
+				expFunc:        tt.fields.expFunc,
+				expChan:        tt.fields.expChan,
+				expGroup:       tt.fields.expGroup,
+			}
+			if got := g.ToRawMap(tt.args.ctx); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("gache.ToRawMap() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestToRawMap(t *testing.T) {
+	type args struct {
+		ctx context.Context
+	}
+	tests := []struct {
+		name string
+		args args
+		want map[string]interface{}
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ToRawMap(tt.args.ctx); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ToRawMap() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -869,6 +930,136 @@ func TestForeach(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := Foreach(tt.args.ctx, tt.args.f); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Foreach() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_gache_Write(t *testing.T) {
+	type fields struct {
+		l              uint64
+		shards         [255]*sync.Map
+		expire         int64
+		expFuncEnabled bool
+		expFunc        func(context.Context, string)
+		expChan        chan string
+		expGroup       singleflight.Group
+	}
+	type args struct {
+		ctx context.Context
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		wantW   string
+		wantErr bool
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &gache{
+				l:              tt.fields.l,
+				shards:         tt.fields.shards,
+				expire:         tt.fields.expire,
+				expFuncEnabled: tt.fields.expFuncEnabled,
+				expFunc:        tt.fields.expFunc,
+				expChan:        tt.fields.expChan,
+				expGroup:       tt.fields.expGroup,
+			}
+			w := &bytes.Buffer{}
+			if err := g.Write(tt.args.ctx, w); (err != nil) != tt.wantErr {
+				t.Errorf("gache.Write() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if gotW := w.String(); gotW != tt.wantW {
+				t.Errorf("gache.Write() = %v, want %v", gotW, tt.wantW)
+			}
+		})
+	}
+}
+
+func TestWrite(t *testing.T) {
+	type args struct {
+		ctx context.Context
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantW   string
+		wantErr bool
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &bytes.Buffer{}
+			if err := Write(tt.args.ctx, w); (err != nil) != tt.wantErr {
+				t.Errorf("Write() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if gotW := w.String(); gotW != tt.wantW {
+				t.Errorf("Write() = %v, want %v", gotW, tt.wantW)
+			}
+		})
+	}
+}
+
+func Test_gache_Read(t *testing.T) {
+	type fields struct {
+		l              uint64
+		shards         [255]*sync.Map
+		expire         int64
+		expFuncEnabled bool
+		expFunc        func(context.Context, string)
+		expChan        chan string
+		expGroup       singleflight.Group
+	}
+	type args struct {
+		r io.Reader
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		wantErr bool
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &gache{
+				l:              tt.fields.l,
+				shards:         tt.fields.shards,
+				expire:         tt.fields.expire,
+				expFuncEnabled: tt.fields.expFuncEnabled,
+				expFunc:        tt.fields.expFunc,
+				expChan:        tt.fields.expChan,
+				expGroup:       tt.fields.expGroup,
+			}
+			if err := g.Read(tt.args.r); (err != nil) != tt.wantErr {
+				t.Errorf("gache.Read() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRead(t *testing.T) {
+	type args struct {
+		r io.Reader
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := Read(tt.args.r); (err != nil) != tt.wantErr {
+				t.Errorf("Read() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
