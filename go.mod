@@ -2,7 +2,7 @@ module github.com/kpango/gache
 
 require (
 	github.com/OrlovEvgeny/go-mcache v0.0.0-20181116193636-154af6d8a4dc
-	github.com/allegro/bigcache v1.1.0
+	github.com/allegro/bigcache v1.2.0
 	github.com/bluele/gcache v0.0.0-20190203144525-2016d595ccb0
 	github.com/cespare/xxhash/v2 v2.0.0
 	github.com/coocood/freecache v1.0.1

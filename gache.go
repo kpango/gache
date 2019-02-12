@@ -2,6 +2,8 @@ package gache
 
 import (
 	"context"
+	"encoding/gob"
+	"io"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,7 +19,7 @@ type (
 	Gache interface {
 		Clear()
 		Delete(string)
-		DeleteExpired(ctx context.Context) uint64
+		DeleteExpired(context.Context) uint64
 		Foreach(context.Context, func(string, interface{}, int64) bool) Gache
 		Get(string) (interface{}, bool)
 		Set(string, interface{})
@@ -28,6 +30,9 @@ type (
 		SetWithExpire(string, interface{}, time.Duration)
 		StartExpired(context.Context, time.Duration) Gache
 		ToMap(context.Context) *sync.Map
+		ToRawMap(context.Context) map[string]interface{}
+		Read(io.Reader) error
+		Write(context.Context, io.Writer) error
 	}
 
 	// gache is base instance type
@@ -150,7 +155,7 @@ func (g *gache) StartExpired(ctx context.Context, dur time.Duration) Gache {
 	return g
 }
 
-// ToMap returns All Cache Key-Value map
+// ToMap returns All Cache Key-Value sync.Map
 func (g *gache) ToMap(ctx context.Context) *sync.Map {
 	m := new(sync.Map)
 	g.Foreach(ctx, func(key string, val interface{}, exp int64) bool {
@@ -161,9 +166,27 @@ func (g *gache) ToMap(ctx context.Context) *sync.Map {
 	return m
 }
 
-// ToMap returns All Cache Key-Value map
+// ToMap returns All Cache Key-Value sync.Map
 func ToMap(ctx context.Context) *sync.Map {
 	return instance.ToMap(ctx)
+}
+
+// ToRawMap returns All Cache Key-Value map
+func (g *gache) ToRawMap(ctx context.Context) map[string]interface{} {
+	m := make(map[string]interface{})
+	mu := new(sync.Mutex)
+	g.Foreach(ctx, func(key string, val interface{}, exp int64) bool {
+		mu.Lock()
+		m[key] = val
+		mu.Unlock()
+		return true
+	})
+	return m
+}
+
+// ToRawMap returns All Cache Key-Value map
+func ToRawMap(ctx context.Context) map[string]interface{} {
+	return instance.ToRawMap(ctx)
 }
 
 // get returns value & exists from key
@@ -309,6 +332,34 @@ func (g *gache) Foreach(ctx context.Context, f func(string, interface{}, int64) 
 // Foreach calls f sequentially for each key and value present in the Gache.
 func Foreach(ctx context.Context, f func(string, interface{}, int64) bool) Gache {
 	return instance.Foreach(ctx, f)
+}
+
+// Write writes all cached data to writer
+func (g *gache) Write(ctx context.Context, w io.Writer) error {
+	return gob.NewEncoder(w).Encode(g.ToRawMap(ctx))
+}
+
+// Write writes all cached data to writer
+func Write(ctx context.Context, w io.Writer) error {
+	return instance.Write(ctx, w)
+}
+
+// Read reads reader data to cache
+func (g *gache) Read(r io.Reader) error {
+	m := make(map[string]interface{})
+	err := gob.NewDecoder(r).Decode(&m)
+	if err != nil {
+		return err
+	}
+	for k, v := range m {
+		g.Set(k, v)
+	}
+	return nil
+}
+
+// Read reads reader data to cache
+func Read(r io.Reader) error {
+	return instance.Read(r)
 }
 
 // Clear deletes all key and value present in the Gache.
