@@ -12,7 +12,7 @@ clean:
 	rm -rf bench
 	rm -rf vendor
 
-bench:
+bench: clean init
 	go test -count=5 -run=NONE -bench . -benchmem
 
 bench-all:
@@ -33,11 +33,15 @@ profile: clean init
 	go test -count=10 -run=NONE -bench=BenchmarkGacheWithBigDataset -benchmem -o pprof/test.bin -cpuprofile pprof/cpu-gache.out -memprofile pprof/mem-gache.out
 	go tool pprof --svg pprof/test.bin pprof/cpu-gache.out > cpu-gache.svg
 	go tool pprof --svg pprof/test.bin pprof/mem-gache.out > mem-gache.svg
+	go-torch -f bench/cpu-gache-graph.svg pprof/test.bin pprof/cpu-gache.out
+	go-torch --alloc_objects -f bench/mem-gache-graph.svg pprof/test.bin pprof/mem-gache.out
 	rm -rf pprof
 	mkdir pprof
 	go test -count=10 -run=NONE -bench=BenchmarkGocacheWithBigDataset -benchmem -o pprof/test.bin -cpuprofile pprof/cpu-gocache.out -memprofile pprof/mem-gocache.out
 	go tool pprof --svg pprof/test.bin pprof/mem-gocache.out > mem-gocache.svg
 	go tool pprof --svg pprof/test.bin pprof/cpu-gocache.out > cpu-gocache.svg
+	go-torch -f bench/cpu-gocache-graph.svg pprof/test.bin pprof/cpu-gocache.out
+	go-torch --alloc_objects -f bench/mem-gocache-graph.svg pprof/test.bin pprof/mem-gocache.out
 	rm -rf pprof
 	mkdir pprof
 	go test -count=10 -run=NONE -bench=BenchmarkMapWithBigDataset -benchmem -o pprof/test.bin -cpuprofile pprof/cpu-def.out -memprofile pprof/mem-def.out
