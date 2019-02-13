@@ -15,9 +15,6 @@ clean:
 bench: clean init
 	go test -count=5 -run=NONE -bench . -benchmem
 
-bench-all:
-	sh ./bench.sh
-
 init:
 	GO111MODULE=on go mod init
 	GO111MODULE=on go mod vendor
@@ -54,11 +51,7 @@ lint:
 	gometalinter --enable-all . | rg -v comment
 
 test:
-	go test -v $(go list ./... | rg -v vendor)
+	GO111MODULE=on go test --race -v $(go list ./... | rg -v vendor)
 
 contributors:
 	git log --format='%aN <%aE>' | sort -fu > CONTRIBUTORS
-
-update:
-	rm -rf Gopkg.* vendor
-	dep init
