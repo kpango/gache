@@ -90,7 +90,7 @@ func GetGache() Gache {
 
 // isValid checks expiration of value
 func (v *value) isValid() bool {
-	return v.expire == 0 || fastime.UnixNanoNow() < v.expire
+	return v.expire <= 0 || fastime.UnixNanoNow() <= v.expire
 }
 
 // SetDefaultExpire set expire duration
