@@ -20,6 +20,7 @@ github.com/golang/protobuf v1.2.0/go.mod h1:6lQm79b+lXiMfvg/cZm0SGofjICqVBUtrP5y
 github.com/hlts2/gocache v0.0.0-20181007125314-e9a99e525ba1/go.mod h1:u/v6wO8kS57bViN/degQAjOX3zGWVx3VW2HOClP2Vcc=
 github.com/hlts2/gocache v0.0.0-20190216130302-fca39ad0fd30 h1:dUuT9Ybk/6gg0I03Z0ET5jXFvloA0VXr6DG2xt3He24=
 github.com/hlts2/gocache v0.0.0-20190216130302-fca39ad0fd30/go.mod h1:F4tUovaw56AzbV8K7ET39ZhQLFP8c8bLXRIuVvHAHUg=
+github.com/hlts2/gocache v0.0.0-20190216154334-05df48153bcb/go.mod h1:F4tUovaw56AzbV8K7ET39ZhQLFP8c8bLXRIuVvHAHUg=
 github.com/kpango/fastime v1.0.0/go.mod h1:Y5XY5bLG5yc7g2XmMUzc22XYV1XaH+KgUOHkDvLp4SA=
 github.com/kpango/fastime v1.0.2 h1:yBowxbDW0qz6EcmoV6ASj4aprgmpzDIlsd+ECN2RiaU=
 github.com/kpango/fastime v1.0.2/go.mod h1:Y5XY5bLG5yc7g2XmMUzc22XYV1XaH+KgUOHkDvLp4SA=
