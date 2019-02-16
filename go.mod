@@ -10,7 +10,7 @@ require (
 	github.com/kpango/fastime v1.0.2
 	github.com/kpango/glg v1.2.7
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/pierrec/lz4 v0.0.0-20190131084431-473cd7ce01a1
+	github.com/pierrec/lz4/v2 v2.0.8
 	golang.org/x/sync v0.0.0-20181221193216-37e7f081c4d4
 	google.golang.org/appengine v1.4.0 // indirect
 )
