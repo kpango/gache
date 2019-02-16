@@ -11,7 +11,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/kpango/fastime"
-	"github.com/pierrec/lz4"
+	"github.com/pierrec/lz4/v2"
 	"golang.org/x/sync/singleflight"
 )
 
