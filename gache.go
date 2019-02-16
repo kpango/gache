@@ -11,6 +11,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/kpango/fastime"
+	"github.com/pierrec/lz4"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -336,7 +337,7 @@ func Foreach(ctx context.Context, f func(string, interface{}, int64) bool) Gache
 
 // Write writes all cached data to writer
 func (g *gache) Write(ctx context.Context, w io.Writer) error {
-	return gob.NewEncoder(w).Encode(g.ToRawMap(ctx))
+	return gob.NewEncoder(lz4.NewWriter(w)).Encode(g.ToRawMap(ctx))
 }
 
 // Write writes all cached data to writer
@@ -347,7 +348,7 @@ func Write(ctx context.Context, w io.Writer) error {
 // Read reads reader data to cache
 func (g *gache) Read(r io.Reader) error {
 	m := make(map[string]interface{})
-	err := gob.NewDecoder(r).Decode(&m)
+	err := gob.NewDecoder(lz4.NewReader(r)).Decode(&m)
 	if err != nil {
 		return err
 	}
