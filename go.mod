@@ -6,7 +6,7 @@ require (
 	github.com/bluele/gcache v0.0.0-20190203144525-2016d595ccb0
 	github.com/cespare/xxhash/v2 v2.0.0
 	github.com/coocood/freecache v1.0.1
-	github.com/hlts2/gocache v0.0.0-20181209044210-78e21778d6d4
+	github.com/hlts2/gocache v0.0.0-20190216065548-f2b89fd577c0
 	github.com/kpango/fastime v1.0.2
 	github.com/kpango/glg v1.2.7
 	github.com/patrickmn/go-cache v2.1.0+incompatible
