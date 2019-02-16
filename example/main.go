@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"time"
 
 	"github.com/kpango/gache"
@@ -56,4 +57,12 @@ func main() {
 	if ok {
 		glg.Info(v6)
 	}
+
+	gc.Write(context.Background(), glg.FileWriter("./gache-sample.gdb", 0755))
+	gcn := gache.New().SetDefaultExpire(time.Minute)
+	gcn.Read(glg.FileWriter("./gache-sample.gdb", 0755))
+	gache.Foreach(context.Background(), func(k string, v interface{}, exp int64) bool {
+		glg.Debugf("key:\t%v\nval:\t%v", k, v)
+		return true
+	})
 }
