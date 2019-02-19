@@ -21,29 +21,29 @@ type (
 		Clear()
 		Delete(string)
 		DeleteExpired(context.Context) uint64
+		DisableExpiredHook() Gache
+		EnableExpiredHook() Gache
 		Foreach(context.Context, func(string, interface{}, int64) bool) Gache
 		Get(string) (interface{}, bool)
+		Read(io.Reader) error
 		Set(string, interface{})
 		SetDefaultExpire(time.Duration) Gache
 		SetExpiredHook(f func(context.Context, string)) Gache
-		EnableExpiredHook() Gache
-		DisableExpiredHook() Gache
 		SetWithExpire(string, interface{}, time.Duration)
 		StartExpired(context.Context, time.Duration) Gache
 		ToMap(context.Context) *sync.Map
 		ToRawMap(context.Context) map[string]interface{}
-		Read(io.Reader) error
 		Write(context.Context, io.Writer) error
 	}
 
 	// gache is base instance type
 	gache struct {
-		shards         [256]*sync.Map
-		expire         int64
-		expFuncEnabled bool
-		expFunc        func(context.Context, string)
 		expChan        chan string
+		expFunc        func(context.Context, string)
+		expFuncEnabled bool
 		expGroup       singleflight.Group
+		expire         int64
+		shards         [256]*sync.Map
 	}
 
 	value struct {
