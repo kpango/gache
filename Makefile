@@ -13,6 +13,7 @@ clean:
 	rm -rf vendor
 
 bench: clean init
+	sleep 3
 	go test -count=5 -run=NONE -bench . -benchmem
 
 init:

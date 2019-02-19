@@ -38,8 +38,7 @@ type (
 
 	// gache is base instance type
 	gache struct {
-		l              uint64
-		shards         [255]*sync.Map
+		shards         [256]*sync.Map
 		expire         int64
 		expFuncEnabled bool
 		expFunc        func(context.Context, string)
@@ -73,7 +72,6 @@ func newGache() *gache {
 		expire:  int64(time.Second * 30),
 		expChan: make(chan string, 1000),
 	}
-	g.l = uint64(len(g.shards))
 	for i := range g.shards {
 		g.shards[i] = new(sync.Map)
 	}
@@ -192,20 +190,18 @@ func ToRawMap(ctx context.Context) map[string]interface{} {
 
 // get returns value & exists from key
 func (g *gache) get(key string) (interface{}, bool) {
-	v, ok := g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))%g.l].Load(key)
+	v, ok := g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&0xFF].Load(key)
 
 	if !ok {
 		return nil, false
 	}
 
-	d, ok := v.(*value)
-
-	if !ok || !d.isValid() {
-		g.expiration(key)
-		return nil, false
+	if d := v.(*value); d.isValid() {
+		return *d.val, true
 	}
 
-	return *d.val, true
+	g.expiration(key)
+	return nil, false
 }
 
 // Get returns value & exists from key
@@ -220,7 +216,7 @@ func Get(key string) (interface{}, bool) {
 
 // set sets key-value & expiration to Gache
 func (g *gache) set(key string, val interface{}, expire int64) {
-	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))%g.l].Store(key, &value{
+	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&0xFF].Store(key, &value{
 		expire: fastime.UnixNanoNow() + expire,
 		val:    &val,
 	})
@@ -248,7 +244,7 @@ func Set(key string, val interface{}) {
 
 // Delete deletes value from Gache using key
 func (g *gache) Delete(key string) {
-	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))%g.l].Delete(key)
+	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&0xFF].Delete(key)
 }
 
 // Delete deletes value from Gache using key
@@ -273,23 +269,19 @@ func (g *gache) DeleteExpired(ctx context.Context) uint64 {
 	for i := range g.shards {
 		wg.Add(1)
 		go func(c context.Context, idx int) {
-			defer wg.Done()
 			g.shards[idx].Range(func(k, v interface{}) bool {
 				select {
 				case <-c.Done():
 					return false
 				default:
-					d, ok := v.(*value)
-					if ok {
-						if !d.isValid() {
-							g.expiration(k.(string))
-							atomic.AddUint64(&rows, 1)
-						}
-						return true
+					if d := v.(*value); !d.isValid() {
+						g.expiration(k.(string))
+						atomic.AddUint64(&rows, 1)
 					}
-					return false
+					return true
 				}
 			})
+			wg.Done()
 		}(ctx, i)
 	}
 	wg.Wait()
@@ -307,23 +299,19 @@ func (g *gache) Foreach(ctx context.Context, f func(string, interface{}, int64) 
 	for i := range g.shards {
 		wg.Add(1)
 		go func(c context.Context, idx int) {
-			defer wg.Done()
 			g.shards[idx].Range(func(k, v interface{}) bool {
 				select {
 				case <-c.Done():
 					return false
 				default:
-					d, ok := v.(*value)
-					if ok {
-						if !d.isValid() {
-							g.expiration(k.(string))
-							return true
-						}
+					if d := v.(*value); d.isValid() {
 						return f(k.(string), *d.val, d.expire)
 					}
-					return false
+					g.expiration(k.(string))
+					return true
 				}
 			})
+			wg.Done()
 		}(ctx, i)
 	}
 	wg.Wait()
