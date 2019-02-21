@@ -35,6 +35,17 @@ type (
 		ToMap(context.Context) *sync.Map
 		ToRawMap(context.Context) map[string]interface{}
 		Write(context.Context, io.Writer) error
+
+		// TODO Future works below
+		// ExtendExpire(string)
+		// GetRefresh(string)(interface{}, bool)
+		// GetRefreshWithDur(string, time.Duration)(interface{}, bool)
+		// GetWithIgnoredExpire(string)(interface{}, bool)
+		// Keys(context.Context)[]string
+		// Pop(string)(interface{}, bool) // Get & Delete
+		// SetIfNotExists(string, interface{})
+		// SetWithExpireIfNotExists(string, interface{}, time.Duration)
+
 	}
 
 	// gache is base instance type
@@ -229,8 +240,11 @@ func GetWithExpire(key string) (interface{}, int64, bool) {
 
 // set sets key-value & expiration to Gache
 func (g *gache) set(key string, val interface{}, expire int64) {
+	if expire > 0 {
+		expire = fastime.UnixNanoNow() + expire
+	}
 	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&0xFF].Store(key, value{
-		expire: fastime.UnixNanoNow() + expire,
+		expire: expire,
 		val:    val,
 	})
 }
