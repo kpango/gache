@@ -204,7 +204,7 @@ func (g *gache) get(key string) (interface{}, bool) {
 		return nil, false
 	}
 
-	if d := v.(*value); d.isValid() {
+	if d := v.(value); d.isValid() {
 		return d.val, true
 	}
 
@@ -224,7 +224,7 @@ func Get(key string) (interface{}, bool) {
 
 // set sets key-value & expiration to Gache
 func (g *gache) set(key string, val interface{}, expire int64) {
-	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&0xFF].Store(key, &value{
+	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&0xFF].Store(key, value{
 		expire: fastime.UnixNanoNow() + expire,
 		val:    val,
 	})
@@ -282,7 +282,7 @@ func (g *gache) DeleteExpired(ctx context.Context) uint64 {
 				case <-c.Done():
 					return false
 				default:
-					if d := v.(*value); !d.isValid() {
+					if d := v.(value); !d.isValid() {
 						g.expiration(k.(string))
 						atomic.AddUint64(&rows, 1)
 					}
@@ -312,7 +312,7 @@ func (g *gache) Foreach(ctx context.Context, f func(string, interface{}, int64) 
 				case <-c.Done():
 					return false
 				default:
-					if d := v.(*value); d.isValid() {
+					if d := v.(value); d.isValid() {
 						return f(k.(string), d.val, d.expire)
 					}
 					g.expiration(k.(string))
@@ -333,11 +333,11 @@ func Foreach(ctx context.Context, f func(string, interface{}, int64) bool) Gache
 
 // Write writes all cached data to writer
 func (g *gache) Write(ctx context.Context, w io.Writer) error {
-	m := make(map[string]*value)
+	m := make(map[string]value)
 	mu := new(sync.Mutex)
 	gb := gob.NewEncoder(lz4.NewWriter(w))
 	g.Foreach(ctx, func(key string, val interface{}, exp int64) bool {
-		v := &value{
+		v := value{
 			val:    &val,
 			expire: exp,
 		}
@@ -357,7 +357,7 @@ func Write(ctx context.Context, w io.Writer) error {
 
 // Read reads reader data to cache
 func (g *gache) Read(r io.Reader) error {
-	m := make(map[string]*value)
+	m := make(map[string]value)
 	err := gob.NewDecoder(lz4.NewReader(r)).Decode(&m)
 	if err != nil {
 		return err
