@@ -48,7 +48,7 @@ type (
 
 	value struct {
 		expire int64
-		val    *interface{}
+		val    interface{}
 	}
 )
 
@@ -92,7 +92,7 @@ func (v *value) isValid() bool {
 }
 
 func (v *value) Val() interface{} {
-	return *v.val
+	return v.val
 }
 
 func (v *value) Expire() time.Duration {
@@ -205,7 +205,7 @@ func (g *gache) get(key string) (interface{}, bool) {
 	}
 
 	if d := v.(*value); d.isValid() {
-		return *d.val, true
+		return d.val, true
 	}
 
 	g.expiration(key)
@@ -226,7 +226,7 @@ func Get(key string) (interface{}, bool) {
 func (g *gache) set(key string, val interface{}, expire int64) {
 	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&0xFF].Store(key, &value{
 		expire: fastime.UnixNanoNow() + expire,
-		val:    &val,
+		val:    val,
 	})
 }
 
@@ -313,7 +313,7 @@ func (g *gache) Foreach(ctx context.Context, f func(string, interface{}, int64) 
 					return false
 				default:
 					if d := v.(*value); d.isValid() {
-						return f(k.(string), *d.val, d.expire)
+						return f(k.(string), d.val, d.expire)
 					}
 					g.expiration(k.(string))
 					return true
