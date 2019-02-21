@@ -91,6 +91,14 @@ func (v *value) isValid() bool {
 	return v.expire <= 0 || fastime.UnixNanoNow() <= v.expire
 }
 
+func (v *value) Val() interface{} {
+	return *v.val
+}
+
+func (v *value) Expire() time.Duration {
+	return *(*time.Duration)(unsafe.Pointer(&v.expire))
+}
+
 // SetDefaultExpire set expire duration
 func (g *gache) SetDefaultExpire(ex time.Duration) Gache {
 	atomic.StoreInt64(&g.expire, *(*int64)(unsafe.Pointer(&ex)))
@@ -325,7 +333,21 @@ func Foreach(ctx context.Context, f func(string, interface{}, int64) bool) Gache
 
 // Write writes all cached data to writer
 func (g *gache) Write(ctx context.Context, w io.Writer) error {
-	return gob.NewEncoder(lz4.NewWriter(w)).Encode(g.ToRawMap(ctx))
+	m := make(map[string]*value)
+	mu := new(sync.Mutex)
+	gb := gob.NewEncoder(lz4.NewWriter(w))
+	g.Foreach(ctx, func(key string, val interface{}, exp int64) bool {
+		v := &value{
+			val:    &val,
+			expire: exp,
+		}
+		mu.Lock()
+		m[key] = v
+		mu.Unlock()
+		gob.Register(v.Val())
+		return true
+	})
+	return gb.Encode(m)
 }
 
 // Write writes all cached data to writer
@@ -335,13 +357,15 @@ func Write(ctx context.Context, w io.Writer) error {
 
 // Read reads reader data to cache
 func (g *gache) Read(r io.Reader) error {
-	m := make(map[string]interface{})
+	m := make(map[string]*value)
 	err := gob.NewDecoder(lz4.NewReader(r)).Decode(&m)
 	if err != nil {
 		return err
 	}
 	for k, v := range m {
-		g.Set(k, v)
+		if v.isValid() {
+			g.Set(k, v.Val())
+		}
 	}
 	return nil
 }
