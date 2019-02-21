@@ -25,6 +25,7 @@ type (
 		EnableExpiredHook() Gache
 		Foreach(context.Context, func(string, interface{}, int64) bool) Gache
 		Get(string) (interface{}, bool)
+		GetWithExpire(string) (interface{}, int64, bool)
 		Read(io.Reader) error
 		Set(string, interface{})
 		SetDefaultExpire(time.Duration) Gache
@@ -89,14 +90,6 @@ func GetGache() Gache {
 // isValid checks expiration of value
 func (v *value) isValid() bool {
 	return v.expire <= 0 || fastime.UnixNanoNow() <= v.expire
-}
-
-func (v *value) Val() interface{} {
-	return v.val
-}
-
-func (v *value) Expire() time.Duration {
-	return *(*time.Duration)(unsafe.Pointer(&v.expire))
 }
 
 // SetDefaultExpire set expire duration
@@ -197,28 +190,40 @@ func ToRawMap(ctx context.Context) map[string]interface{} {
 }
 
 // get returns value & exists from key
-func (g *gache) get(key string) (interface{}, bool) {
+func (g *gache) get(key string) (interface{}, int64, bool) {
 	v, ok := g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&0xFF].Load(key)
 
 	if !ok {
-		return nil, false
+		return nil, 0, false
 	}
 
 	if d := v.(value); d.isValid() {
-		return d.val, true
+		return d.val, d.expire, true
 	}
 
 	g.expiration(key)
-	return nil, false
+	return nil, 0, false
 }
 
 // Get returns value & exists from key
 func (g *gache) Get(key string) (interface{}, bool) {
-	return g.get(key)
+	v, _, ok := g.get(key)
+	return v, ok
 }
 
 // Get returns value & exists from key
 func Get(key string) (interface{}, bool) {
+	v, _, ok := instance.get(key)
+	return v, ok
+}
+
+// GetWithExpire returns value & expire & exists from key
+func (g *gache) GetWithExpire(key string) (interface{}, int64, bool) {
+	return g.get(key)
+}
+
+// GetWithExpire returns value & expire & exists from key
+func GetWithExpire(key string) (interface{}, int64, bool) {
 	return instance.get(key)
 }
 
@@ -344,7 +349,7 @@ func (g *gache) Write(ctx context.Context, w io.Writer) error {
 		mu.Lock()
 		m[key] = v
 		mu.Unlock()
-		gob.Register(v.Val())
+		gob.Register(val)
 		return true
 	})
 	return gb.Encode(m)
@@ -364,7 +369,7 @@ func (g *gache) Read(r io.Reader) error {
 	}
 	for k, v := range m {
 		if v.isValid() {
-			g.Set(k, v.Val())
+			g.Set(k, v.val)
 		}
 	}
 	return nil
