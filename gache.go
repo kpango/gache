@@ -37,14 +37,22 @@ type (
 		Write(context.Context, io.Writer) error
 
 		// TODO Future works below
-		// ExtendExpire(string)
-		// GetRefresh(string)(interface{}, bool)
-		// GetRefreshWithDur(string, time.Duration)(interface{}, bool)
-		// GetWithIgnoredExpire(string)(interface{}, bool)
-		// Keys(context.Context)[]string
-		// Pop(string)(interface{}, bool) // Get & Delete
-		// SetIfNotExists(string, interface{})
-		// SetWithExpireIfNotExists(string, interface{}, time.Duration)
+		// func ExtendExpire(string, addExp time.Duration){}
+		// func (g *gache)ExtendExpire(string, addExp time.Duration){}
+		// func GetRefresh(string)(interface{}, bool){}
+		// func (g *gache)GetRefresh(string)(interface{}, bool){}
+		// func GetRefreshWithDur(string, time.Duration)(interface{}, bool){}
+		// func (g *gache)GetRefreshWithDur(string, time.Duration)(interface{}, bool){}
+		// func GetWithIgnoredExpire(string)(interface{}, bool){}
+		// func (g *gache)GetWithIgnoredExpire(string)(interface{}, bool){}
+		// func Keys(context.Context)[]string{}
+		// func (g *gache)Keys(context.Context)[]string{}
+		// func Pop(string)(interface{}, bool) // Get & Delete{}
+		// func (g *gache)Pop(string)(interface{}, bool) // Get & Delete{}
+		// func SetIfNotExists(string, interface{}){}
+		// func (g *gache)SetIfNotExists(string, interface{}){}
+		// func SetWithExpireIfNotExists(string, interface{}, time.Duration){}
+		// func (g *gache)SetWithExpireIfNotExists(string, interface{}, time.Duration){}
 
 	}
 
