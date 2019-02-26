@@ -15,6 +15,7 @@ github.com/cespare/xxhash/v2 v2.0.0 h1:Eb1IiuHmi3FhT12NKfqCQXSXRqc4NTMvgJoREemrS
 github.com/cespare/xxhash/v2 v2.0.0/go.mod h1:MaMeaVDXZNmTpkOyhVs3/WfjgobkbQgfrVnrr3DyZL0=
 github.com/coocood/freecache v1.0.1 h1:oFyo4msX2c0QIKU+kuMJUwsKamJ+AKc2JJrKcMszJ5M=
 github.com/coocood/freecache v1.0.1/go.mod h1:ePwxCDzOYvARfHdr1pByNct1at3CoKnsipOHwKlNbzI=
+github.com/coocood/freecache v1.1.0/go.mod h1:ePwxCDzOYvARfHdr1pByNct1at3CoKnsipOHwKlNbzI=
 github.com/golang/protobuf v1.2.0 h1:P3YflyNX/ehuJFLhxviNdFxQPkGK5cDcApsge1SqnvM=
 github.com/golang/protobuf v1.2.0/go.mod h1:6lQm79b+lXiMfvg/cZm0SGofjICqVBUtrP5yJMmIC1U=
 github.com/hlts2/gocache v0.0.0-20181007125314-e9a99e525ba1/go.mod h1:u/v6wO8kS57bViN/degQAjOX3zGWVx3VW2HOClP2Vcc=

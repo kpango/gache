@@ -5,7 +5,7 @@ require (
 	github.com/allegro/bigcache v1.2.0
 	github.com/bluele/gcache v0.0.0-20190203144525-2016d595ccb0
 	github.com/cespare/xxhash/v2 v2.0.0
-	github.com/coocood/freecache v1.0.1
+	github.com/coocood/freecache v1.1.0
 	github.com/hlts2/gocache v0.0.0-20190217073200-8b772e486b6e
 	github.com/kpango/fastime v1.0.8
 	github.com/kpango/glg v1.2.9
