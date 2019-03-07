@@ -32,6 +32,7 @@ type (
 		SetExpiredHook(f func(context.Context, string)) Gache
 		SetWithExpire(string, interface{}, time.Duration)
 		StartExpired(context.Context, time.Duration) Gache
+		Len() int
 		ToMap(context.Context) *sync.Map
 		ToRawMap(context.Context) map[string]interface{}
 		Write(context.Context, io.Writer) error
@@ -63,6 +64,7 @@ type (
 		expFuncEnabled bool
 		expGroup       singleflight.Group
 		expire         int64
+		l              uint64
 		shards         [256]*sync.Map
 	}
 
@@ -192,7 +194,7 @@ func ToMap(ctx context.Context) *sync.Map {
 
 // ToRawMap returns All Cache Key-Value map
 func (g *gache) ToRawMap(ctx context.Context) map[string]interface{} {
-	m := make(map[string]interface{})
+	m := make(map[string]interface{}, g.Len())
 	mu := new(sync.Mutex)
 	g.Foreach(ctx, func(key string, val interface{}, exp int64) bool {
 		mu.Lock()
@@ -251,6 +253,7 @@ func (g *gache) set(key string, val interface{}, expire int64) {
 	if expire > 0 {
 		expire = fastime.UnixNanoNow() + expire
 	}
+	atomic.AddUint64(&g.l, 1)
 	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&0xFF].Store(key, value{
 		expire: expire,
 		val:    val,
@@ -279,6 +282,7 @@ func Set(key string, val interface{}) {
 
 // Delete deletes value from Gache using key
 func (g *gache) Delete(key string) {
+	atomic.StoreUint64(&g.l, atomic.LoadUint64(&g.l)-1)
 	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&0xFF].Delete(key)
 }
 
@@ -358,10 +362,22 @@ func Foreach(ctx context.Context, f func(string, interface{}, int64) bool) Gache
 	return instance.Foreach(ctx, f)
 }
 
+// Len returns stored object length
+func Len() int {
+	return instance.Len()
+}
+
+// Len returns stored object length
+func (g *gache) Len() int {
+	l := atomic.LoadUint64(&g.l)
+	return *(*int)(unsafe.Pointer(&l))
+}
+
 // Write writes all cached data to writer
 func (g *gache) Write(ctx context.Context, w io.Writer) error {
-	m := make(map[string]value)
+	m := make(map[string]value, g.Len())
 	mu := new(sync.Mutex)
+	gob.Register(m)
 	gb := gob.NewEncoder(lz4.NewWriter(w))
 	g.Foreach(ctx, func(key string, val interface{}, exp int64) bool {
 		v := value{

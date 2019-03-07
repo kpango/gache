@@ -36,6 +36,7 @@ func main() {
 		glg.Info(v3)
 	}
 
+	glg.Debugf("Len:\t%d", gache.Len())
 	// set gache default expire time
 	gc := gache.New().SetDefaultExpire(time.Second * 10)
 
