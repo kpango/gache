@@ -3,7 +3,7 @@ module github.com/kpango/gache
 go 1.12
 
 require (
-	github.com/OrlovEvgeny/go-mcache v0.0.0-20181116193636-154af6d8a4dc
+	github.com/OrlovEvgeny/go-mcache v0.0.0-20190324093936-ff14629b25ce
 	github.com/allegro/bigcache v1.2.0
 	github.com/bluele/gcache v0.0.0-20190301044115-79ae3b2d8680
 	github.com/cespare/xxhash/v2 v2.0.0
