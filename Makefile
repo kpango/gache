@@ -52,3 +52,6 @@ test:
 
 contributors:
 	git log --format='%aN <%aE>' | sort -fu > CONTRIBUTORS
+
+run:
+	go run example/main.go

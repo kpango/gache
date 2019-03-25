@@ -394,8 +394,8 @@ func (g *gache) Write(ctx context.Context, w io.Writer) error {
 	})
 	gob.Register(map[string]interface{}{})
 
-	// return gob.NewEncoder(lz4.NewWriter(w)).Encode(&m)
 	return gob.NewEncoder(w).Encode(&m)
+	// return gob.NewEncoder(lz4.NewWriter(w)).Encode(&m)
 }
 
 // Write writes all cached data to writer
