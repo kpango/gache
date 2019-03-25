@@ -11,7 +11,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/kpango/fastime"
-	"github.com/pierrec/lz4"
+	// "github.com/pierrec/lz4"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -65,13 +65,20 @@ type (
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 
 	value struct {
 		expire int64
 		val    interface{}
 	}
+)
+
+const (
+	// slen is shards length
+	slen = 512
+	// mask is slen-1 Hex value
+	mask = 0x1FF
 )
 
 var (
@@ -91,12 +98,12 @@ func New() Gache {
 // newGache returns *gache instance
 func newGache() *gache {
 	g := &gache{
-		expire:  int64(time.Second * 30),
-		expChan: make(chan string, 1000),
+		expire: int64(time.Second * 30),
 	}
 	for i := range g.shards {
 		g.shards[i] = new(sync.Map)
 	}
+	g.expChan = make(chan string, len(g.shards)*10)
 	return g
 }
 
@@ -212,7 +219,7 @@ func ToRawMap(ctx context.Context) map[string]interface{} {
 
 // get returns value & exists from key
 func (g *gache) get(key string) (interface{}, int64, bool) {
-	v, ok := g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&0xFF].Load(key)
+	v, ok := g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&mask].Load(key)
 
 	if !ok {
 		return nil, 0, false
@@ -254,7 +261,7 @@ func (g *gache) set(key string, val interface{}, expire int64) {
 		expire = fastime.UnixNanoNow() + expire
 	}
 	atomic.AddUint64(&g.l, 1)
-	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&0xFF].Store(key, value{
+	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&mask].Store(key, value{
 		expire: expire,
 		val:    val,
 	})
@@ -283,7 +290,7 @@ func Set(key string, val interface{}) {
 // Delete deletes value from Gache using key
 func (g *gache) Delete(key string) {
 	atomic.StoreUint64(&g.l, atomic.LoadUint64(&g.l)-1)
-	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&0xFF].Delete(key)
+	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&mask].Delete(key)
 }
 
 // Delete deletes value from Gache using key
@@ -375,22 +382,20 @@ func (g *gache) Len() int {
 
 // Write writes all cached data to writer
 func (g *gache) Write(ctx context.Context, w io.Writer) error {
-	m := make(map[string]value, g.Len())
 	mu := new(sync.Mutex)
-	gob.Register(m)
-	gb := gob.NewEncoder(lz4.NewWriter(w))
+	m := make(map[string]interface{}, g.Len())
+
 	g.Foreach(ctx, func(key string, val interface{}, exp int64) bool {
-		v := value{
-			val:    &val,
-			expire: exp,
-		}
-		mu.Lock()
-		m[key] = v
-		mu.Unlock()
 		gob.Register(val)
+		mu.Lock()
+		m[key] = val
+		mu.Unlock()
 		return true
 	})
-	return gb.Encode(m)
+	gob.Register(map[string]interface{}{})
+
+	// return gob.NewEncoder(lz4.NewWriter(w)).Encode(&m)
+	return gob.NewEncoder(w).Encode(&m)
 }
 
 // Write writes all cached data to writer
@@ -400,15 +405,15 @@ func Write(ctx context.Context, w io.Writer) error {
 
 // Read reads reader data to cache
 func (g *gache) Read(r io.Reader) error {
-	m := make(map[string]value)
-	err := gob.NewDecoder(lz4.NewReader(r)).Decode(&m)
+	var m map[string]interface{}
+	gob.Register(map[string]interface{}{})
+	err := gob.NewDecoder(r).Decode(&m)
+	// err := gob.NewDecoder(lz4.NewReader(r)).Decode(&m)
 	if err != nil {
 		return err
 	}
 	for k, v := range m {
-		if v.isValid() {
-			g.Set(k, v.val)
-		}
+		g.Set(k, v)
 	}
 	return nil
 }

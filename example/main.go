@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"github.com/kpango/gache"
@@ -59,11 +60,38 @@ func main() {
 		glg.Info(v6)
 	}
 
-	gc.Write(context.Background(), glg.FileWriter("./gache-sample.gdb", 0755))
-	gcn := gache.New().SetDefaultExpire(time.Minute)
-	gcn.Read(glg.FileWriter("./gache-sample.gdb", 0755))
 	gache.Foreach(context.Background(), func(k string, v interface{}, exp int64) bool {
 		glg.Debugf("key:\t%v\nval:\t%v", k, v)
+		return true
+	})
+
+	file, err := os.OpenFile("./gache-sample.gdb", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0755)
+	if err != nil {
+		glg.Error(err)
+		return
+	}
+	gc.Write(context.Background(), file)
+
+	file.Close()
+
+	gcn := gache.New().SetDefaultExpire(time.Minute)
+	file, err = os.OpenFile("./gache-sample.gdb", os.O_RDONLY, 0755)
+	if err != nil {
+		glg.Error(err)
+		return
+	}
+
+	err = gcn.Read(file)
+
+	file.Close()
+
+	if err != nil {
+		glg.Error(err)
+		return
+	}
+
+	gcn.Foreach(context.Background(), func(k string, v interface{}, exp int64) bool {
+		glg.Warnf("key:\t%v\nval:\t%v", k, v)
 		return true
 	})
 }

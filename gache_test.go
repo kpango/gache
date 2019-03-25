@@ -93,7 +93,7 @@ func Test_gache_SetDefaultExpire(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		ex time.Duration
@@ -152,7 +152,7 @@ func Test_gache_EnableExpiredHook(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	tests := []struct {
 		name   string
@@ -203,7 +203,7 @@ func Test_gache_DisableExpiredHook(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	tests := []struct {
 		name   string
@@ -254,7 +254,7 @@ func Test_gache_SetExpiredHook(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		f func(context.Context, string)
@@ -313,7 +313,7 @@ func Test_gache_StartExpired(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		ctx context.Context
@@ -353,7 +353,7 @@ func Test_gache_ToMap(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		ctx context.Context
@@ -412,7 +412,7 @@ func Test_gache_ToRawMap(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		ctx context.Context
@@ -471,7 +471,7 @@ func Test_gache_get(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		key string
@@ -519,7 +519,7 @@ func Test_gache_Get(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		key string
@@ -588,7 +588,7 @@ func Test_gache_GetWithExpire(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		key string
@@ -665,7 +665,7 @@ func Test_gache_set(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		key    string
@@ -703,7 +703,7 @@ func Test_gache_SetWithExpire(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		key    string
@@ -760,7 +760,7 @@ func Test_gache_Set(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		key string
@@ -815,7 +815,7 @@ func Test_gache_Delete(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		key string
@@ -868,7 +868,7 @@ func Test_gache_expiration(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		key string
@@ -904,7 +904,7 @@ func Test_gache_DeleteExpired(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		ctx context.Context
@@ -963,7 +963,7 @@ func Test_gache_Foreach(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		ctx context.Context
@@ -1040,7 +1040,7 @@ func Test_gache_Len(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	tests := []struct {
 		name   string
@@ -1075,7 +1075,7 @@ func Test_gache_Write(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		ctx context.Context
@@ -1146,7 +1146,7 @@ func Test_gache_Read(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	type args struct {
 		r io.Reader
@@ -1205,7 +1205,7 @@ func Test_gache_Clear(t *testing.T) {
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [256]*sync.Map
+		shards         [slen]*sync.Map
 	}
 	tests := []struct {
 		name   string
