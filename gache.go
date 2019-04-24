@@ -9,8 +9,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/cespare/xxhash/v2"
+	xxhash "github.com/cespare/xxhash/v2"
 	"github.com/kpango/fastime"
+
 	// "github.com/pierrec/lz4"
 	"golang.org/x/sync/singleflight"
 )
