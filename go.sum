@@ -25,9 +25,8 @@ github.com/kpango/fastime v1.0.0/go.mod h1:Y5XY5bLG5yc7g2XmMUzc22XYV1XaH+KgUOHkD
 github.com/kpango/fastime v1.0.8 h1:Wif5eocdsIXmMG+8HHfRP/jD6UUl+/OVTJ+sMzvA1+E=
 github.com/kpango/fastime v1.0.8/go.mod h1:Y5XY5bLG5yc7g2XmMUzc22XYV1XaH+KgUOHkDvLp4SA=
 github.com/kpango/gache v1.1.0/go.mod h1:BHKRCYnJ2pRFFIJNc61KTJb3KXSzlrt/ITfgfCQJAJw=
-github.com/kpango/glg v1.3.0 h1:77BWdR0kKkFloM2eSAr0A7lWvUyAIlOhj4LV5n2hrB8=
-github.com/kpango/glg v1.3.0/go.mod h1:7zzaAoMqvngad+sagWLjr00EQMJaqyGONdg0WYBAO3M=
-github.com/kpango/glg v1.3.1/go.mod h1:7zzaAoMqvngad+sagWLjr00EQMJaqyGONdg0WYBAO3M=
+github.com/kpango/glg v1.3.2 h1:daEbLGtRspX5MYne4ppkl2StRN/hc8hE+ntnu38tsOI=
+github.com/kpango/glg v1.3.2/go.mod h1:7zzaAoMqvngad+sagWLjr00EQMJaqyGONdg0WYBAO3M=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
 github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72/go.mod h1:JwIasOWyU6f++ZhiEuf87xNszmSA2myDM2Kzu9HwQUA=
@@ -36,12 +35,8 @@ github.com/vmihailenco/msgpack v4.0.1+incompatible/go.mod h1:fy3FlTQTDXWkZ7Bh6Ac
 golang.org/x/net v0.0.0-20180724234803-3673e40ba225 h1:kNX+jCowfMYzvlSvJu5pQWEmyWFrBXJ3PBy10xKMXK8=
 golang.org/x/net v0.0.0-20180724234803-3673e40ba225/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
 golang.org/x/sync v0.0.0-20181108010431-42b317875d0f/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
-golang.org/x/sync v0.0.0-20190227155943-e225da77a7e6 h1:bjcUS9ztw9kFmmIxJInhon/0Is3p+EHBKNgquIzo1OI=
-golang.org/x/sync v0.0.0-20190227155943-e225da77a7e6/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
-golang.org/x/sync v0.0.0-20190412193400-56d357773e84 h1:Wxj2fXu1EvwxAECSbRXajvVLBBWwrHwpBjEutEfssaI=
-golang.org/x/sync v0.0.0-20190412193400-56d357773e84/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
-golang.org/x/sync v0.0.0-20190423043555-112230192c58 h1:b5h4tcFAl2KiTeOtSVRUTatD/0nSwuVeLccezpAi7w8=
-golang.org/x/sync v0.0.0-20190423043555-112230192c58/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+golang.org/x/sync v0.0.0-20190423024810-112230192c58 h1:8gQV6CLnAEikrhgkHFbMAEhagSSnXWGV915qUMm9mrU=
+golang.org/x/sync v0.0.0-20190423024810-112230192c58/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
 google.golang.org/appengine v1.5.0 h1:KxkO13IPW4Lslp2bz+KHP2E3gtFlrIGNThxkZQ3g+4c=
 google.golang.org/appengine v1.5.0/go.mod h1:xpcJRLb0r/rnEns0DIKYYv+WjYCduHsrkT7/EB5XEv4=
