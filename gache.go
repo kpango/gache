@@ -55,7 +55,6 @@ type (
 		// func (g *gache)SetIfNotExists(string, interface{}){}
 		// func SetWithExpireIfNotExists(string, interface{}, time.Duration){}
 		// func (g *gache)SetWithExpireIfNotExists(string, interface{}, time.Duration){}
-
 	}
 
 	// gache is base instance type
@@ -66,7 +65,7 @@ type (
 		expGroup       singleflight.Group
 		expire         int64
 		l              uint64
-		shards         [slen]*sync.Map
+		shards         [slen]*Map
 	}
 
 	value struct {
@@ -102,7 +101,7 @@ func newGache() *gache {
 		expire: int64(time.Second * 30),
 	}
 	for i := range g.shards {
-		g.shards[i] = new(sync.Map)
+		g.shards[i] = new(Map)
 	}
 	g.expChan = make(chan string, len(g.shards)*10)
 	return g
@@ -226,8 +225,8 @@ func (g *gache) get(key string) (interface{}, int64, bool) {
 		return nil, 0, false
 	}
 
-	if d := v.(value); d.isValid() {
-		return d.val, d.expire, true
+	if v.isValid() {
+		return v.val, v.expire, true
 	}
 
 	g.expiration(key)
@@ -291,7 +290,7 @@ func Set(key string, val interface{}) {
 // Delete deletes value from Gache using key
 func (g *gache) Delete(key string) {
 	for {
-		if v := atomic.LoadUint64((*uint64)(&g.l)); atomic.CompareAndSwapUint64((*uint64)(&g.l), v, v-1) {
+		if v := atomic.LoadUint64(&g.l); atomic.CompareAndSwapUint64(&g.l, v, v-1) {
 			g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&mask].Delete(key)
 			return
 		}
@@ -320,13 +319,13 @@ func (g *gache) DeleteExpired(ctx context.Context) uint64 {
 	for i := range g.shards {
 		wg.Add(1)
 		go func(c context.Context, idx int) {
-			g.shards[idx].Range(func(k, v interface{}) bool {
+			g.shards[idx].Range(func(k string, v value) bool {
 				select {
 				case <-c.Done():
 					return false
 				default:
-					if d := v.(value); !d.isValid() {
-						g.expiration(k.(string))
+					if !v.isValid() {
+						g.expiration(k)
 						atomic.AddUint64(&rows, 1)
 					}
 					return true
@@ -350,15 +349,15 @@ func (g *gache) Foreach(ctx context.Context, f func(string, interface{}, int64) 
 	for i := range g.shards {
 		wg.Add(1)
 		go func(c context.Context, idx int) {
-			g.shards[idx].Range(func(k, v interface{}) bool {
+			g.shards[idx].Range(func(k string, v value) bool {
 				select {
 				case <-c.Done():
 					return false
 				default:
-					if d := v.(value); d.isValid() {
-						return f(k.(string), d.val, d.expire)
+					if v.isValid() {
+						return f(k, v.val, v.expire)
 					}
-					g.expiration(k.(string))
+					g.expiration(k)
 					return true
 				}
 			})
@@ -431,7 +430,7 @@ func Read(r io.Reader) error {
 // Clear deletes all key and value present in the Gache.
 func (g *gache) Clear() {
 	for i := range g.shards {
-		g.shards[i] = new(sync.Map)
+		g.shards[i] = new(Map)
 	}
 }
 

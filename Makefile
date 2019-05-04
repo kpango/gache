@@ -6,6 +6,7 @@ all: clean install lint test bench
 
 clean:
 	go clean ./...
+	go clean -modcache
 	rm -rf ./*.log
 	rm -rf ./*.svg
 	rm -rf ./go.*
