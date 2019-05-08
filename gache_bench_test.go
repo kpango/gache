@@ -13,7 +13,6 @@ import (
 	"github.com/coocood/freecache"
 	"github.com/hlts2/gocache"
 	cache "github.com/patrickmn/go-cache"
-	"github.com/recoilme/pudge"
 )
 
 type DefaultMap struct {
@@ -165,6 +164,48 @@ func BenchmarkGocacheWithBigDataset(b *testing.B) {
 	})
 }
 
+func BenchmarkFastCacheWithSmallDataset(b *testing.B) {
+	fc := fastcache.New(20)
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for k, v := range smallData {
+				fc.Set([]byte(k), []byte(v))
+				var val []byte
+				val = fc.Get(val, []byte(k))
+				if val == nil {
+					b.Errorf("fastcache Get failed key: %v\tval: %v\n", k, v)
+				}
+				if string(val) != v {
+					b.Errorf("expect %v but got %v", v, string(val))
+				}
+			}
+		}
+	})
+}
+
+func BenchmarkFastCacheWithBigDataset(b *testing.B) {
+	fc := fastcache.New(10000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for k, v := range bigData {
+				fc.Set([]byte(k), []byte(v))
+				var val []byte
+				val = fc.Get(val, []byte(k))
+				if val == nil {
+					b.Errorf("fastcache Get failed key: %v\tval: %v\n", k, v)
+				}
+				if string(val) != v {
+					b.Errorf("expect %v but got %v", v, string(val))
+				}
+			}
+		}
+	})
+}
+
 func BenchmarkMapWithSmallDataset(b *testing.B) {
 	m := NewDefault()
 	b.ResetTimer()
@@ -201,48 +242,6 @@ func BenchmarkMapWithBigDataset(b *testing.B) {
 				}
 				if val != v {
 					b.Errorf("expect %v but got %v", v, val)
-				}
-			}
-		}
-	})
-}
-
-func BenchmarkFastCacheWithSmallDataset(b *testing.B) {
-	fc := fastcache.New(20)
-	b.ResetTimer()
-	b.ReportAllocs()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			for k, v := range smallData {
-				fc.Set([]byte(k), []byte(v))
-				var val []byte
-				val = fc.Get(val, []byte(k))
-				if val == nil {
-					b.Errorf("fastcache Get failed key: %v\tval: %v\n", k, v)
-				}
-				if string(val) != v {
-					b.Errorf("expect %v but got %v", v, string(val))
-				}
-			}
-		}
-	})
-}
-
-func BenchmarkFastCacheWithBigDataset(b *testing.B) {
-	fc := fastcache.New(20)
-	b.ResetTimer()
-	b.ReportAllocs()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			for k, v := range bigData {
-				fc.Set([]byte(k), []byte(v))
-				var val []byte
-				val = fc.Get(val, []byte(k))
-				if val == nil {
-					b.Errorf("fastcache Get failed key: %v\tval: %v\n", k, v)
-				}
-				if string(val) != v {
-					b.Errorf("expect %v but got %v", v, string(val))
 				}
 			}
 		}
@@ -546,48 +545,6 @@ func BenchmarkMCacheWithBigDataset(b *testing.B) {
 				val, ok := mc.GetPointer(k)
 				if !ok {
 					b.Errorf("mcache Get failed key: %v\tval: %v\n", k, v)
-				}
-				if val.(string) != v {
-					b.Errorf("expect %v but got %v", v, val.(string))
-				}
-			}
-		}
-	})
-}
-
-func BenchmarkPudgeWithSmallDataset(b *testing.B) {
-	defer pudge.CloseAll()
-	b.ResetTimer()
-	b.ReportAllocs()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			for k, v := range smallData {
-				pudge.Set("", k, v)
-				var val interface{}
-				err := pudge.Get("", k, &v)
-				if err != nil {
-					b.Errorf("pudge Get failed key: %v\tval: %v\n", k, v)
-				}
-				if val.(string) != v {
-					b.Errorf("expect %v but got %v", v, val.(string))
-				}
-			}
-		}
-	})
-}
-
-func BenchmarkPudgeWithBigDataset(b *testing.B) {
-	defer pudge.CloseAll()
-	b.ResetTimer()
-	b.ReportAllocs()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			for k, v := range bigData {
-				pudge.Set("", k, v)
-				var val interface{}
-				err := pudge.Get("", k, &v)
-				if err != nil {
-					b.Errorf("pudge Get failed key: %v\tval: %v\n", k, v)
 				}
 				if val.(string) != v {
 					b.Errorf("expect %v but got %v", v, val.(string))

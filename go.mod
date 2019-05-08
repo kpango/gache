@@ -13,7 +13,6 @@ require (
 	github.com/kpango/fastime v1.0.9
 	github.com/kpango/glg v1.4.1
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/recoilme/pudge v1.0.2
 	golang.org/x/sync v0.0.0-20190423024810-112230192c58
 	google.golang.org/appengine v1.5.0 // indirect
 )

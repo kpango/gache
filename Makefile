@@ -16,7 +16,7 @@ clean:
 
 bench: clean init
 	sleep 3
-	go test -count=5 -run=NONE -bench . -benchmem
+	go test -count=1 -run=NONE -bench . -benchmem
 
 init:
 	GO111MODULE=on go mod init
