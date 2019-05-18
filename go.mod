@@ -6,7 +6,7 @@ require (
 	github.com/OrlovEvgeny/go-mcache v0.0.0-20190324090623-ff14629b25ce
 	github.com/VictoriaMetrics/fastcache v1.5.0
 	github.com/allegro/bigcache v1.2.1-0.20190218064605-e24eb225f156
-	github.com/bluele/gcache v0.0.0-20190301044115-79ae3b2d8680
+	github.com/bluele/gcache v0.0.0-20190518032855-bc40bd653833
 	github.com/cespare/xxhash/v2 v2.0.1-0.20190104013014-3767db7a7e18
 	github.com/coocood/freecache v1.1.0
 	github.com/hlts2/gocache v0.0.0-20190217073200-8b772e486b6e
