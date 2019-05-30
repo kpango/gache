@@ -289,12 +289,8 @@ func Set(key string, val interface{}) {
 
 // Delete deletes value from Gache using key
 func (g *gache) Delete(key string) {
-	for {
-		if v := atomic.LoadUint64(&g.l); atomic.CompareAndSwapUint64(&g.l, v, v-1) {
-			g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&mask].Delete(key)
-			return
-		}
-	}
+	atomic.AddUint64(&g.l, ^uint64(0))
+	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&mask].Delete(key)
 }
 
 // Delete deletes value from Gache using key
