@@ -5,6 +5,7 @@ github.com/OrlovEvgeny/go-mcache v0.0.0-20190520090815-302f7b82bb96 h1:w2Ra9fsbi
 github.com/OrlovEvgeny/go-mcache v0.0.0-20190520090815-302f7b82bb96/go.mod h1:9X0sgxPdm23rjgP2JD9uS+0QL2EEpQKRgABK3+BQ81A=
 github.com/VictoriaMetrics/fastcache v1.5.0 h1:z8t2QV/CDXWVJ9vy9yRtGGDoOvk9W2aXQBijbLk0KCc=
 github.com/VictoriaMetrics/fastcache v1.5.0/go.mod h1:+jv9Ckb+za/P1ZRg/sulP5Ni1v49daAVERr0H3CuscE=
+github.com/VictoriaMetrics/fastcache v1.5.1/go.mod h1:+jv9Ckb+za/P1ZRg/sulP5Ni1v49daAVERr0H3CuscE=
 github.com/allegro/bigcache v1.1.0/go.mod h1:Cb/ax3seSYIx7SuZdm2G2xzfwmv3TPSk2ucNfQESPXM=
 github.com/allegro/bigcache v1.2.0 h1:qDaE0QoF29wKBb3+pXFrJFy1ihe5OT9OiXhg1t85SxM=
 github.com/allegro/bigcache v1.2.0/go.mod h1:Cb/ax3seSYIx7SuZdm2G2xzfwmv3TPSk2ucNfQESPXM=
