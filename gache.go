@@ -37,6 +37,7 @@ type (
 		ToMap(context.Context) *sync.Map
 		ToRawMap(context.Context) map[string]interface{}
 		Write(context.Context, io.Writer) error
+		Stop()
 
 		// TODO Future works below
 		// func ExtendExpire(string, addExp time.Duration){}
@@ -63,6 +64,7 @@ type (
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         context.CancelFunc
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -168,6 +170,7 @@ func SetExpiredHook(f func(context.Context, string)) Gache {
 func (g *gache) StartExpired(ctx context.Context, dur time.Duration) Gache {
 	go func() {
 		tick := time.NewTicker(dur)
+		ctx, g.cancel = context.WithCancel(ctx)
 		for {
 			select {
 			case <-ctx.Done():
@@ -421,6 +424,14 @@ func (g *gache) Read(r io.Reader) error {
 // Read reads reader data to cache
 func Read(r io.Reader) error {
 	return instance.Read(r)
+}
+
+func (g *gache) Stop() {
+	g.cancel()
+}
+
+func Stop() {
+	instance.Stop()
 }
 
 // Clear deletes all key and value present in the Gache.
