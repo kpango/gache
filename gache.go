@@ -427,7 +427,9 @@ func Read(r io.Reader) error {
 }
 
 func (g *gache) Stop() {
-	g.cancel()
+	if g.cancel != nil {
+		g.cancel()
+	}
 }
 
 func Stop() {
