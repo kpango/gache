@@ -426,12 +426,14 @@ func Read(r io.Reader) error {
 	return instance.Read(r)
 }
 
+// Stop kills expire daemon
 func (g *gache) Stop() {
 	if g.cancel != nil {
 		g.cancel()
 	}
 }
 
+// Stop kills expire daemon
 func Stop() {
 	instance.Stop()
 }
