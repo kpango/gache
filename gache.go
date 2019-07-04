@@ -64,7 +64,7 @@ type (
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
-		cancel         context.CancelFunc
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -170,7 +170,8 @@ func SetExpiredHook(f func(context.Context, string)) Gache {
 func (g *gache) StartExpired(ctx context.Context, dur time.Duration) Gache {
 	go func() {
 		tick := time.NewTicker(dur)
-		ctx, g.cancel = context.WithCancel(ctx)
+		ctx, cancel := context.WithCancel(ctx)
+		g.cancel.Store(cancel)
 		for {
 			select {
 			case <-ctx.Done():
@@ -427,8 +428,8 @@ func Read(r io.Reader) error {
 }
 
 func (g *gache) Stop() {
-	if g.cancel != nil {
-		g.cancel()
+	if cancel := g.cancel.Load().(context.CancelFunc); cancel != nil {
+		cancel()
 	}
 }
 
