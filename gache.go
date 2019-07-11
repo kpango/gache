@@ -429,8 +429,10 @@ func Read(r io.Reader) error {
 
 // Stop kills expire daemon
 func (g *gache) Stop() {
-	if cancel := g.cancel.Load().(context.CancelFunc); cancel != nil {
-		cancel()
+	if c := g.cancel.Load(); c != nil {
+		if cancel, ok := c.(context.CancelFunc); ok && cancel != nil {
+			cancel()
+		}
 	}
 }
 

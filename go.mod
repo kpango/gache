@@ -13,5 +13,5 @@ require (
 	github.com/kpango/fastime v1.0.14
 	github.com/kpango/glg v1.4.5
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	golang.org/x/sync v0.0.0-20190423024810-112230192c58
+	golang.org/x/sync v0.0.0-20181108010431-42b317875d0f
 )
