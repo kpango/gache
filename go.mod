@@ -10,8 +10,8 @@ require (
 	github.com/cespare/xxhash/v2 v2.0.1-0.20190104013014-3767db7a7e18
 	github.com/coocood/freecache v1.1.0
 	github.com/hlts2/gocache v0.0.0-20190217073200-8b772e486b6e
-	github.com/kpango/fastime v1.0.14
+	github.com/kpango/fastime v1.0.15
 	github.com/kpango/glg v1.4.5
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	golang.org/x/sync v0.0.0-20181108010431-42b317875d0f
+	golang.org/x/sync v0.0.0-20190423024810-112230192c58
 )
