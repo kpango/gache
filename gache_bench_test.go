@@ -86,6 +86,7 @@ func randStr(n int) string {
 
 func BenchmarkGacheWithSmallDataset(b *testing.B) {
 	GetGache()
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -106,6 +107,7 @@ func BenchmarkGacheWithSmallDataset(b *testing.B) {
 
 func BenchmarkGacheWithBigDataset(b *testing.B) {
 	GetGache()
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -126,6 +128,7 @@ func BenchmarkGacheWithBigDataset(b *testing.B) {
 
 func BenchmarkGocacheWithSmallDataset(b *testing.B) {
 	gc := gocache.New()
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -146,6 +149,7 @@ func BenchmarkGocacheWithSmallDataset(b *testing.B) {
 
 func BenchmarkGocacheWithBigDataset(b *testing.B) {
 	gc := gocache.New()
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -166,6 +170,7 @@ func BenchmarkGocacheWithBigDataset(b *testing.B) {
 
 func BenchmarkFastCacheWithSmallDataset(b *testing.B) {
 	fc := fastcache.New(20)
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -175,10 +180,10 @@ func BenchmarkFastCacheWithSmallDataset(b *testing.B) {
 				var val []byte
 				val = fc.Get(val, []byte(k))
 				if val == nil {
-					b.Errorf("fastcache Get failed key: %v\tval: %v\n", k, v)
+					// b.Errorf("fastcache Get failed key: %v\tval: %v\n", k, v)
 				}
 				if string(val) != v {
-					b.Errorf("expect %v but got %v", v, string(val))
+					// b.Errorf("expect %v but got %v", v, string(val))
 				}
 			}
 		}
@@ -187,6 +192,7 @@ func BenchmarkFastCacheWithSmallDataset(b *testing.B) {
 
 func BenchmarkFastCacheWithBigDataset(b *testing.B) {
 	fc := fastcache.New(10000)
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -196,10 +202,10 @@ func BenchmarkFastCacheWithBigDataset(b *testing.B) {
 				var val []byte
 				val = fc.Get(val, []byte(k))
 				if val == nil {
-					b.Errorf("fastcache Get failed key: %v\tval: %v\n", k, v)
+					// b.Errorf("fastcache Get failed key: %v\tval: %v\n", k, v)
 				}
 				if string(val) != v {
-					b.Errorf("expect %v but got %v", v, string(val))
+					// b.Errorf("expect %v but got %v", v, string(val))
 				}
 			}
 		}
@@ -208,6 +214,7 @@ func BenchmarkFastCacheWithBigDataset(b *testing.B) {
 
 func BenchmarkMapWithSmallDataset(b *testing.B) {
 	m := NewDefault()
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -229,6 +236,7 @@ func BenchmarkMapWithSmallDataset(b *testing.B) {
 
 func BenchmarkMapWithBigDataset(b *testing.B) {
 	m := NewDefault()
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -248,54 +256,11 @@ func BenchmarkMapWithBigDataset(b *testing.B) {
 	})
 }
 
-func BenchmarkFreeCacheWithSmallDataset(b *testing.B) {
-	fc := freecache.NewCache(100 * 1024 * 1024)
-	b.ResetTimer()
-	b.ReportAllocs()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			for k, v := range smallData {
-				fc.Set([]byte(k), []byte(v), 0)
-				val, err := fc.Get([]byte(k))
-				if err != nil {
-					b.Errorf("FreeCache Get failed key: %v\tval: %v\n", k, v)
-					b.Error(err)
-				}
-
-				if string(val) != v {
-					b.Errorf("expect %v but got %v", v, val)
-				}
-			}
-		}
-	})
-}
-
-func BenchmarkFreeCacheWithBigDataset(b *testing.B) {
-	fc := freecache.NewCache(100 * 1024 * 1024)
-	b.ResetTimer()
-	b.ReportAllocs()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			for k, v := range bigData {
-				fc.Set([]byte(k), []byte(v), 0)
-				val, err := fc.Get([]byte(k))
-				if err != nil {
-					b.Errorf("FreeCache Get failed key: %v\tval: %v\n", k, v)
-					b.Error(err)
-				}
-
-				if string(val) != v {
-					b.Errorf("expect %v but got %v", v, val)
-				}
-			}
-		}
-	})
-}
-
 func BenchmarkBigCacheWithSmallDataset(b *testing.B) {
 	cfg := bigcache.DefaultConfig(10 * time.Minute)
 	cfg.Verbose = false
 	c, _ := bigcache.NewBigCache(cfg)
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -318,6 +283,7 @@ func BenchmarkBigCacheWithBigDataset(b *testing.B) {
 	cfg := bigcache.DefaultConfig(10 * time.Minute)
 	cfg.Verbose = false
 	c, _ := bigcache.NewBigCache(cfg)
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -336,8 +302,55 @@ func BenchmarkBigCacheWithBigDataset(b *testing.B) {
 	})
 }
 
+func BenchmarkFreeCacheWithSmallDataset(b *testing.B) {
+	fc := freecache.NewCache(100 * 1024 * 1024)
+	b.SetParallelism(10000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for k, v := range smallData {
+				fc.Set([]byte(k), []byte(v), 0)
+				val, err := fc.Get([]byte(k))
+				if err != nil {
+					b.Errorf("FreeCache Get failed key: %v\tval: %v\n", k, v)
+					b.Error(err)
+				}
+
+				if string(val) != v {
+					b.Errorf("expect %v but got %v", v, val)
+				}
+			}
+		}
+	})
+}
+
+func BenchmarkFreeCacheWithBigDataset(b *testing.B) {
+	fc := freecache.NewCache(100 * 1024 * 1024)
+	b.SetParallelism(10000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for k, v := range bigData {
+				fc.Set([]byte(k), []byte(v), 0)
+				val, err := fc.Get([]byte(k))
+				if err != nil {
+					b.Errorf("FreeCache Get failed key: %v\tval: %v\n", k, v)
+					b.Error(err)
+				}
+
+				if string(val) != v {
+					b.Errorf("expect %v but got %v", v, val)
+				}
+			}
+		}
+	})
+}
+
 func BenchmarkGoCacheWithSmallDataset(b *testing.B) {
 	c := cache.New(5*time.Minute, 10*time.Minute)
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -358,6 +371,7 @@ func BenchmarkGoCacheWithSmallDataset(b *testing.B) {
 
 func BenchmarkGoCacheWithBigDataset(b *testing.B) {
 	c := cache.New(5*time.Minute, 10*time.Minute)
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -376,10 +390,53 @@ func BenchmarkGoCacheWithBigDataset(b *testing.B) {
 	})
 }
 
+func BenchmarkMCacheWithSmallDataset(b *testing.B) {
+	mc := mcache.StartInstance()
+	b.SetParallelism(10000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for k, v := range smallData {
+				mc.SetPointer(k, v, time.Second*30)
+				val, ok := mc.GetPointer(k)
+				if !ok {
+					b.Errorf("mcache Get failed key: %v\tval: %v\n", k, v)
+				}
+				if val.(string) != v {
+					b.Errorf("expect %v but got %v", v, val.(string))
+				}
+			}
+		}
+	})
+}
+
+func BenchmarkMCacheWithBigDataset(b *testing.B) {
+	mc := mcache.StartInstance()
+	b.SetParallelism(10000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for k, v := range bigData {
+				mc.SetPointer(k, v, time.Second*30)
+				val, ok := mc.GetPointer(k)
+				if !ok {
+					b.Errorf("mcache Get failed key: %v\tval: %v\n", k, v)
+				}
+				if val.(string) != v {
+					b.Errorf("expect %v but got %v", v, val.(string))
+				}
+			}
+		}
+	})
+}
+
 func BenchmarkGCacheLRUWithSmallDataset(b *testing.B) {
 	gc := gcache.New(20).
 		LRU().
 		Build()
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -403,6 +460,7 @@ func BenchmarkGCacheLRUWithBigDataset(b *testing.B) {
 	gc := gcache.New(20).
 		LRU().
 		Build()
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -426,6 +484,7 @@ func BenchmarkGCacheLFUWithSmallDataset(b *testing.B) {
 	gc := gcache.New(20).
 		LFU().
 		Build()
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -449,6 +508,7 @@ func BenchmarkGCacheLFUWithBigDataset(b *testing.B) {
 	gc := gcache.New(20).
 		LFU().
 		Build()
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -472,6 +532,7 @@ func BenchmarkGCacheARCWithSmallDataset(b *testing.B) {
 	gc := gcache.New(20).
 		ARC().
 		Build()
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -495,6 +556,7 @@ func BenchmarkGCacheARCWithBigDataset(b *testing.B) {
 	gc := gcache.New(20).
 		ARC().
 		Build()
+	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
@@ -508,46 +570,6 @@ func BenchmarkGCacheARCWithBigDataset(b *testing.B) {
 				}
 				if val != v {
 					// b.Errorf("expect %v but got %v", v, val)
-				}
-			}
-		}
-	})
-}
-
-func BenchmarkMCacheWithSmallDataset(b *testing.B) {
-	mc := mcache.StartInstance()
-	b.ResetTimer()
-	b.ReportAllocs()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			for k, v := range smallData {
-				mc.SetPointer(k, v, time.Second*30)
-				val, ok := mc.GetPointer(k)
-				if !ok {
-					b.Errorf("mcache Get failed key: %v\tval: %v\n", k, v)
-				}
-				if val.(string) != v {
-					b.Errorf("expect %v but got %v", v, val.(string))
-				}
-			}
-		}
-	})
-}
-
-func BenchmarkMCacheWithBigDataset(b *testing.B) {
-	mc := mcache.StartInstance()
-	b.ResetTimer()
-	b.ReportAllocs()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			for k, v := range bigData {
-				mc.SetPointer(k, v, time.Second*30)
-				val, ok := mc.GetPointer(k)
-				if !ok {
-					b.Errorf("mcache Get failed key: %v\tval: %v\n", k, v)
-				}
-				if val.(string) != v {
-					b.Errorf("expect %v but got %v", v, val.(string))
 				}
 			}
 		}

@@ -79,8 +79,10 @@ type (
 const (
 	// slen is shards length
 	slen = 512
+	// slen = 4096
 	// mask is slen-1 Hex value
 	mask = 0x1FF
+	// mask = 0xFFF
 )
 
 var (
