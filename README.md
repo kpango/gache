@@ -46,33 +46,36 @@ go get github.com/kpango/gache
 
 ```ltsv
 go test -count=1 -run=NONE -bench . -benchmem
+
 goos: darwin
 goarch: amd64
 pkg: github.com/kpango/gache
-BenchmarkGacheWithSmallDataset-8       	 10000000	       217 ns/op	     192 B/op	       8 allocs/op
-BenchmarkGacheWithBigDataset-8         	      500	   3367835 ns/op	  480004 B/op	   20000 allocs/op
-BenchmarkGocacheWithSmallDataset-8     	  5000000	       371 ns/op	     320 B/op	      16 allocs/op
-BenchmarkGocacheWithBigDataset-8       	      300	   3913257 ns/op	  809037 B/op	   40092 allocs/op
-BenchmarkFastCacheWithSmallDataset-8   	  1000000	      1061 ns/op	      40 B/op	       4 allocs/op
-BenchmarkFastCacheWithBigDataset-8     	       50	  24633452 ns/op	126797919 B/op	   39986 allocs/op
-BenchmarkMapWithSmallDataset-8         	  1000000	      1381 ns/op	     128 B/op	       8 allocs/op
-BenchmarkMapWithBigDataset-8           	      100	  10477737 ns/op	  332664 B/op	   20001 allocs/op
-BenchmarkFreeCacheWithSmallDataset-8   	  1000000	      1226 ns/op	      26 B/op	       4 allocs/op
-BenchmarkFreeCacheWithBigDataset-8     	      100	  20914503 ns/op	126812350 B/op	   39938 allocs/op
-BenchmarkBigCacheWithSmallDataset-8    	  1000000	      1416 ns/op	     418 B/op	       8 allocs/op
-BenchmarkBigCacheWithBigDataset-8      	       20	  54483710 ns/op	219245782 B/op	   30273 allocs/op
-BenchmarkGoCacheWithSmallDataset-8     	  1000000	      1506 ns/op	      64 B/op	       4 allocs/op
-BenchmarkGoCacheWithBigDataset-8       	      100	  10465906 ns/op	  175742 B/op	   10002 allocs/op
-BenchmarkGCacheLRUWithSmallDataset-8   	   500000	      2450 ns/op	     320 B/op	      16 allocs/op
-BenchmarkGCacheLRUWithBigDataset-8     	      100	  21327392 ns/op	 1976773 B/op	   60154 allocs/op
-BenchmarkGCacheLFUWithSmallDataset-8   	   500000	      2953 ns/op	     512 B/op	      20 allocs/op
-BenchmarkGCacheLFUWithBigDataset-8     	      100	  22398865 ns/op	 1440065 B/op	   49989 allocs/op
-BenchmarkGCacheARCWithSmallDataset-8   	   500000	      3121 ns/op	     320 B/op	      16 allocs/op
-BenchmarkGCacheARCWithBigDataset-8     	       20	  66966396 ns/op	 3010356 B/op	   80309 allocs/op
-BenchmarkMCacheWithSmallDataset-8      	   100000	     14009 ns/op	    4358 B/op	      40 allocs/op
-BenchmarkMCacheWithBigDataset-8        	       30	  37309669 ns/op	11098881 B/op	  100002 allocs/op
+BenchmarkGacheWithSmallDataset-8       	 5000000	       250 ns/op	     192 B/op	       8 allocs/op
+BenchmarkGacheWithBigDataset-8         	     500	   3179552 ns/op	  485156 B/op	   20160 allocs/op
+BenchmarkGocacheWithSmallDataset-8     	 3000000	       378 ns/op	     323 B/op	      16 allocs/op
+BenchmarkGocacheWithBigDataset-8       	     300	   3564275 ns/op	  815303 B/op	   40352 allocs/op
+BenchmarkFastCacheWithSmallDataset-8   	 1000000	      1496 ns/op	      44 B/op	       4 allocs/op
+BenchmarkFastCacheWithBigDataset-8     	      50	  36815105 ns/op	126848505 B/op	   41603 allocs/op
+BenchmarkBigCacheWithSmallDataset-8    	 1000000	      1915 ns/op	     424 B/op	       8 allocs/op
+BenchmarkBigCacheWithBigDataset-8      	      30	  62743673 ns/op	227737772 B/op	   32892 allocs/op
+BenchmarkFreeCacheWithSmallDataset-8   	 1000000	      2659 ns/op	      31 B/op	       4 allocs/op
+BenchmarkFreeCacheWithBigDataset-8     	      50	  26550884 ns/op	126889120 B/op	   41552 allocs/op
+BenchmarkMapWithSmallDataset-8         	  500000	      4221 ns/op	     137 B/op	       8 allocs/op
+BenchmarkMapWithBigDataset-8           	     100	  10926857 ns/op	  358593 B/op	   20808 allocs/op
+BenchmarkGoCacheWithSmallDataset-8     	  500000	      3870 ns/op	      73 B/op	       4 allocs/op
+BenchmarkGoCacheWithBigDataset-8       	     100	  10858366 ns/op	  201482 B/op	   10809 allocs/op
+BenchmarkGCacheLRUWithSmallDataset-8   	  200000	      7913 ns/op	     348 B/op	      16 allocs/op
+BenchmarkGCacheLRUWithBigDataset-8     	      50	  21157440 ns/op	 2026806 B/op	   61756 allocs/op
+BenchmarkGCacheLFUWithSmallDataset-8   	  200000	     10704 ns/op	     542 B/op	      20 allocs/op
+BenchmarkGCacheLFUWithBigDataset-8     	      50	  22017917 ns/op	 1491388 B/op	   51602 allocs/op
+BenchmarkGCacheARCWithSmallDataset-8   	  200000	     10987 ns/op	     350 B/op	      16 allocs/op
+BenchmarkGCacheARCWithBigDataset-8     	      20	  64480186 ns/op	 3068799 B/op	   84008 allocs/op
+BenchmarkMCacheWithSmallDataset-8      	  100000	     18578 ns/op	    4373 B/op	      41 allocs/op
+BenchmarkMCacheWithBigDataset-8        	      30	  34827645 ns/op	10851422 B/op	  102187 allocs/op
+BenchmarkBitcaskWithSmallDataset-8     	   30000	     55917 ns/op	    2455 B/op	      49 allocs/op
+BenchmarkBitcaskWithBigDataset-8       	     200	  10602661 ns/op	10502332 B/op	   11091 allocs/op
 PASS
-ok  	github.com/kpango/gache	37.067s
+ok  	github.com/kpango/gache	67.249s
 ```
 
 ## Contribution

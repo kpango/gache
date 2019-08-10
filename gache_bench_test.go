@@ -13,6 +13,7 @@ import (
 	"github.com/coocood/freecache"
 	"github.com/hlts2/gocache"
 	cache "github.com/patrickmn/go-cache"
+	"github.com/prologic/bitcask"
 )
 
 type DefaultMap struct {
@@ -212,50 +213,6 @@ func BenchmarkFastCacheWithBigDataset(b *testing.B) {
 	})
 }
 
-func BenchmarkMapWithSmallDataset(b *testing.B) {
-	m := NewDefault()
-	b.SetParallelism(10000)
-	b.ResetTimer()
-	b.ReportAllocs()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			for k, v := range smallData {
-				m.Set(k, v)
-
-				val, ok := m.Get(k)
-				if !ok {
-					b.Errorf("Map Get failed key: %v\tval: %v\n", k, v)
-				}
-				if val != v {
-					b.Errorf("expect %v but got %v", v, val)
-				}
-			}
-		}
-	})
-}
-
-func BenchmarkMapWithBigDataset(b *testing.B) {
-	m := NewDefault()
-	b.SetParallelism(10000)
-	b.ResetTimer()
-	b.ReportAllocs()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			for k, v := range bigData {
-				m.Set(k, v)
-
-				val, ok := m.Get(k)
-				if !ok {
-					b.Errorf("Map Get failed key: %v\tval: %v\n", k, v)
-				}
-				if val != v {
-					b.Errorf("expect %v but got %v", v, val)
-				}
-			}
-		}
-	})
-}
-
 func BenchmarkBigCacheWithSmallDataset(b *testing.B) {
 	cfg := bigcache.DefaultConfig(10 * time.Minute)
 	cfg.Verbose = false
@@ -390,42 +347,44 @@ func BenchmarkGoCacheWithBigDataset(b *testing.B) {
 	})
 }
 
-func BenchmarkMCacheWithSmallDataset(b *testing.B) {
-	mc := mcache.StartInstance()
+func BenchmarkMapWithSmallDataset(b *testing.B) {
+	m := NewDefault()
 	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			for k, v := range smallData {
-				mc.SetPointer(k, v, time.Second*30)
-				val, ok := mc.GetPointer(k)
+				m.Set(k, v)
+
+				val, ok := m.Get(k)
 				if !ok {
-					b.Errorf("mcache Get failed key: %v\tval: %v\n", k, v)
+					b.Errorf("Map Get failed key: %v\tval: %v\n", k, v)
 				}
-				if val.(string) != v {
-					b.Errorf("expect %v but got %v", v, val.(string))
+				if val != v {
+					b.Errorf("expect %v but got %v", v, val)
 				}
 			}
 		}
 	})
 }
 
-func BenchmarkMCacheWithBigDataset(b *testing.B) {
-	mc := mcache.StartInstance()
+func BenchmarkMapWithBigDataset(b *testing.B) {
+	m := NewDefault()
 	b.SetParallelism(10000)
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			for k, v := range bigData {
-				mc.SetPointer(k, v, time.Second*30)
-				val, ok := mc.GetPointer(k)
+				m.Set(k, v)
+
+				val, ok := m.Get(k)
 				if !ok {
-					b.Errorf("mcache Get failed key: %v\tval: %v\n", k, v)
+					b.Errorf("Map Get failed key: %v\tval: %v\n", k, v)
 				}
-				if val.(string) != v {
-					b.Errorf("expect %v but got %v", v, val.(string))
+				if val != v {
+					b.Errorf("expect %v but got %v", v, val)
 				}
 			}
 		}
@@ -569,6 +528,92 @@ func BenchmarkGCacheARCWithBigDataset(b *testing.B) {
 					// b.Errorf("GCache Get failed key: %v\tval: %v\n", k, v)
 				}
 				if val != v {
+					// b.Errorf("expect %v but got %v", v, val)
+				}
+			}
+		}
+	})
+}
+
+func BenchmarkMCacheWithSmallDataset(b *testing.B) {
+	mc := mcache.StartInstance()
+	b.SetParallelism(10000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for k, v := range smallData {
+				mc.SetPointer(k, v, time.Second*30)
+				val, ok := mc.GetPointer(k)
+				if !ok {
+					b.Errorf("mcache Get failed key: %v\tval: %v\n", k, v)
+				}
+				if val.(string) != v {
+					b.Errorf("expect %v but got %v", v, val.(string))
+				}
+			}
+		}
+	})
+}
+
+func BenchmarkMCacheWithBigDataset(b *testing.B) {
+	mc := mcache.StartInstance()
+	b.SetParallelism(10000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for k, v := range bigData {
+				mc.SetPointer(k, v, time.Second*30)
+				val, ok := mc.GetPointer(k)
+				if !ok {
+					b.Errorf("mcache Get failed key: %v\tval: %v\n", k, v)
+				}
+				if val.(string) != v {
+					b.Errorf("expect %v but got %v", v, val.(string))
+				}
+			}
+		}
+	})
+}
+
+func BenchmarkBitcaskWithSmallDataset(b *testing.B) {
+	bc, _ := bitcask.Open("/tmp/db")
+	b.SetParallelism(10000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for k, v := range smallData {
+				bc.Put(k, []byte(v))
+				val, err := bc.Get(k)
+				if err != nil {
+					// XXX bitcask has a problem . it cannot get long keyname
+					// b.Errorf("Bitcask Get failed key: %v\tval: %v\n", k, v)
+				}
+				if string(val) != v {
+					// b.Errorf("expect %v but got %v", v, val)
+				}
+			}
+		}
+	})
+}
+
+func BenchmarkBitcaskWithBigDataset(b *testing.B) {
+	bc, _ := bitcask.Open("/tmp/db")
+	b.SetParallelism(10000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for k, v := range bigData {
+				bc.Put(k, []byte(v))
+				val, err := bc.Get(k)
+				if err != nil {
+					// XXX bitcask has a problem . it cannot get long keyname
+					// b.Errorf("Bitcask Get failed key: %v\tval: %v\n", k, v)
+				}
+				if string(val) != v {
 					// b.Errorf("expect %v but got %v", v, val)
 				}
 			}
