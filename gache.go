@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/gob"
 	"io"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -170,6 +171,7 @@ func SetExpiredHook(f func(context.Context, string)) Gache {
 
 // StartExpired starts delete expired value daemon
 func (g *gache) StartExpired(ctx context.Context, dur time.Duration) Gache {
+	runtime.SetFinalizer(g, g.Stop)
 	go func() {
 		tick := time.NewTicker(dur)
 		ctx, cancel := context.WithCancel(ctx)
@@ -181,6 +183,7 @@ func (g *gache) StartExpired(ctx context.Context, dur time.Duration) Gache {
 				return
 			case <-tick.C:
 				g.DeleteExpired(ctx)
+				runtime.Gosched()
 			case key := <-g.expChan:
 				go g.expFunc(ctx, key)
 			}
@@ -329,6 +332,7 @@ func (g *gache) DeleteExpired(ctx context.Context) uint64 {
 					if !v.isValid() {
 						g.expiration(k)
 						atomic.AddUint64(&rows, 1)
+						runtime.Gosched()
 					}
 					return true
 				}
@@ -359,6 +363,7 @@ func (g *gache) Foreach(ctx context.Context, f func(string, interface{}, int64) 
 					if v.isValid() {
 						return f(k, v.val, v.expire)
 					}
+					runtime.Gosched()
 					g.expiration(k)
 					return true
 				}
@@ -436,6 +441,7 @@ func (g *gache) Stop() {
 			cancel()
 		}
 	}
+	runtime.SetFinalizer(g, nil)
 }
 
 // Stop kills expire daemon
