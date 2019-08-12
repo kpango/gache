@@ -19,6 +19,7 @@ func main() {
 		value3 = struct{}{}
 	)
 
+	gache.GetGache().StartExpired(context.Background(), time.Hour)
 	// store plain cache default expire is 30 Seconds
 	gache.Set(key1, value3)
 	gache.Set(key2, value2)

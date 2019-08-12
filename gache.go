@@ -171,7 +171,6 @@ func SetExpiredHook(f func(context.Context, string)) Gache {
 
 // StartExpired starts delete expired value daemon
 func (g *gache) StartExpired(ctx context.Context, dur time.Duration) Gache {
-	runtime.SetFinalizer(g, g.Stop)
 	go func() {
 		tick := time.NewTicker(dur)
 		ctx, cancel := context.WithCancel(ctx)
@@ -441,7 +440,6 @@ func (g *gache) Stop() {
 			cancel()
 		}
 	}
-	runtime.SetFinalizer(g, nil)
 }
 
 // Stop kills expire daemon
