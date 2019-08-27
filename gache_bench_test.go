@@ -181,10 +181,10 @@ func BenchmarkFastCacheWithSmallDataset(b *testing.B) {
 				var val []byte
 				val = fc.Get(val, []byte(k))
 				if val == nil {
-					// b.Errorf("fastcache Get failed key: %v\tval: %v\n", k, v)
+					b.Errorf("fastcache Get failed key: %v\tval: %v\n", k, v)
 				}
 				if string(val) != v {
-					// b.Errorf("expect %v but got %v", v, string(val))
+					b.Errorf("expect %v but got %v", v, string(val))
 				}
 			}
 		}
@@ -199,10 +199,11 @@ func BenchmarkFastCacheWithBigDataset(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			for k, v := range bigData {
-				fc.Set([]byte(k), []byte(v))
+				fc.SetBig([]byte(k), []byte(v))
 				var val []byte
-				val = fc.Get(val, []byte(k))
+				val = fc.GetBig(val, []byte(k))
 				if val == nil {
+					// XXX: fastcache has a problem to store big data
 					// b.Errorf("fastcache Get failed key: %v\tval: %v\n", k, v)
 				}
 				if string(val) != v {
