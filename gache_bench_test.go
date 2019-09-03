@@ -586,8 +586,9 @@ func BenchmarkBitcaskWithSmallDataset(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			for k, v := range smallData {
-				bc.Put(k, []byte(v))
-				val, err := bc.Get(k)
+				bk := []byte(k)
+				bc.Put(bk, []byte(v))
+				val, err := bc.Get(bk)
 				if err != nil {
 					// XXX bitcask has a problem . it cannot get long keyname
 					// b.Errorf("Bitcask Get failed key: %v\tval: %v\n", k, v)
@@ -608,8 +609,9 @@ func BenchmarkBitcaskWithBigDataset(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			for k, v := range bigData {
-				bc.Put(k, []byte(v))
-				val, err := bc.Get(k)
+				bk := []byte(k)
+				bc.Put(bk, []byte(v))
+				val, err := bc.Get(bk)
 				if err != nil {
 					// XXX bitcask has a problem . it cannot get long keyname
 					// b.Errorf("Bitcask Get failed key: %v\tval: %v\n", k, v)
