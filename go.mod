@@ -3,6 +3,7 @@ module github.com/kpango/gache
 go 1.13
 
 require (
+	bou.ke/monkey v1.0.1 // indirect
 	github.com/OrlovEvgeny/go-mcache v0.0.0-20190520090815-302f7b82bb96
 	github.com/VictoriaMetrics/fastcache v1.5.1
 	github.com/allegro/bigcache v1.2.1
