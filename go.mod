@@ -14,6 +14,6 @@ require (
 	github.com/kpango/fastime v1.0.15
 	github.com/kpango/glg v1.4.6
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/prologic/bitcask v0.3.4
+	github.com/prologic/bitcask v0.3.5
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
 )
