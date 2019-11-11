@@ -41,6 +41,14 @@ profile: clean init
 	\
 	mv ./*.svg bench/
 
+profile-web:
+	go tool pprof -http=":6061" \
+		pprof/gache-test.bin \
+		pprof/cpu-gache.out &
+	go tool pprof -http=":6062" \
+		pprof/gocache-test.bin \
+		pprof/mem-gocache.out
+
 lint:
 	gometalinter --enable-all . | rg -v comment
 
