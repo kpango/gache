@@ -7,7 +7,7 @@ require (
 	github.com/VictoriaMetrics/fastcache v1.5.2
 	github.com/allegro/bigcache v1.2.1
 	github.com/bluele/gcache v0.0.0-20190518031135-bc40bd653833
-	github.com/cespare/xxhash/v2 v2.1.0
+	github.com/cespare/xxhash/v2 v2.1.1
 	github.com/coocood/freecache v1.1.0
 	github.com/hlts2/gocache v0.0.0-20190217073200-8b772e486b6e
 	github.com/kpango/fastime v1.0.15
