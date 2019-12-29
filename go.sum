@@ -8,6 +8,7 @@ github.com/OrlovEvgeny/go-mcache v0.0.0-20190520090815-302f7b82bb96 h1:w2Ra9fsbi
 github.com/OrlovEvgeny/go-mcache v0.0.0-20190520090815-302f7b82bb96/go.mod h1:9X0sgxPdm23rjgP2JD9uS+0QL2EEpQKRgABK3+BQ81A=
 github.com/VictoriaMetrics/fastcache v1.5.2 h1:Erd8iIuBAL9kke8JzM4+WxkKuFkHh3ktwLanJvDgR44=
 github.com/VictoriaMetrics/fastcache v1.5.2/go.mod h1:+jv9Ckb+za/P1ZRg/sulP5Ni1v49daAVERr0H3CuscE=
+github.com/VictoriaMetrics/fastcache v1.5.5/go.mod h1:ptDBkNMQI4RtmVo8VS/XwRY6RoTu1dAWCbrk+6WsEM8=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
 github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf/go.mod h1:ybxpYRFXyAe+OPACYpWeL0wqObRcbAqCMya13uyzqw0=
 github.com/allegro/bigcache v1.1.0/go.mod h1:Cb/ax3seSYIx7SuZdm2G2xzfwmv3TPSk2ucNfQESPXM=
