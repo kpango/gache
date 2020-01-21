@@ -4,7 +4,7 @@ go 1.13
 
 require (
 	bou.ke/monkey v1.0.2 // indirect
-	github.com/OrlovEvgeny/go-mcache v0.0.0-20190520090815-302f7b82bb96
+	github.com/OrlovEvgeny/go-mcache v0.0.0-20200121124330-1a8195b34f3a
 	github.com/VictoriaMetrics/fastcache v1.5.5
 	github.com/allegro/bigcache v1.2.1
 	github.com/bluele/gcache v0.0.0-20190518031135-bc40bd653833

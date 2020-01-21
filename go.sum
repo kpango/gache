@@ -8,6 +8,7 @@ github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAE
 github.com/OrlovEvgeny/go-mcache v0.0.0-20181113222421-bed69649df7d/go.mod h1:HyURA1Z5rjNkt9E7XyiegZk1ZBvvB+1vYzkeu52goIc=
 github.com/OrlovEvgeny/go-mcache v0.0.0-20190520090815-302f7b82bb96 h1:w2Ra9fsbiW5KadQZSIj+4fSP9mEg27MXThAi+XC6JXY=
 github.com/OrlovEvgeny/go-mcache v0.0.0-20190520090815-302f7b82bb96/go.mod h1:9X0sgxPdm23rjgP2JD9uS+0QL2EEpQKRgABK3+BQ81A=
+github.com/OrlovEvgeny/go-mcache v0.0.0-20200121124330-1a8195b34f3a/go.mod h1:ig6eVXkYn/9dz0Vm8UdLf+E0u1bE6kBSn3n2hqk6jas=
 github.com/VictoriaMetrics/fastcache v1.5.5 h1:HsBlzPgzKG0566YOl1mmfyz8SCU0zLKfbl9RDLsiLD8=
 github.com/VictoriaMetrics/fastcache v1.5.5/go.mod h1:ptDBkNMQI4RtmVo8VS/XwRY6RoTu1dAWCbrk+6WsEM8=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
