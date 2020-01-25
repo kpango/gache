@@ -12,7 +12,7 @@ require (
 	github.com/coocood/freecache v1.1.0
 	github.com/hlts2/gocache v0.0.0-20190217073200-8b772e486b6e
 	github.com/kpango/fastime v1.0.16
-	github.com/kpango/glg v1.4.7
+	github.com/kpango/glg v1.5.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prologic/bitcask v0.3.5
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
