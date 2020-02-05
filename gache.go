@@ -10,8 +10,8 @@ import (
 	"time"
 	"unsafe"
 
-	xxhash "github.com/cespare/xxhash/v2"
 	"github.com/kpango/fastime"
+	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/singleflight"
 	// "github.com/klauspost/compress/s2"
 	// "github.com/pierrec/lz4"
@@ -227,7 +227,7 @@ func ToRawMap(ctx context.Context) map[string]interface{} {
 
 // get returns value & exists from key
 func (g *gache) get(key string) (interface{}, int64, bool) {
-	v, ok := g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&mask].Load(key)
+	v, ok := g.shards[xxh3.HashString(key)&mask].Load(key)
 
 	if !ok {
 		return nil, 0, false
@@ -269,7 +269,8 @@ func (g *gache) set(key string, val interface{}, expire int64) {
 		expire = fastime.UnixNanoNow() + expire
 	}
 	atomic.AddUint64(&g.l, 1)
-	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&mask].Store(key, value{
+
+	g.shards[xxh3.HashString(key)&mask].Store(key, value{
 		expire: expire,
 		val:    val,
 	})
@@ -298,7 +299,7 @@ func Set(key string, val interface{}) {
 // Delete deletes value from Gache using key
 func (g *gache) Delete(key string) {
 	atomic.AddUint64(&g.l, ^uint64(0))
-	g.shards[xxhash.Sum64(*(*[]byte)(unsafe.Pointer(&key)))&mask].Delete(key)
+	g.shards[xxh3.HashString(key)&mask].Delete(key)
 }
 
 // Delete deletes value from Gache using key

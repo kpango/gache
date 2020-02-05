@@ -20,7 +20,7 @@ bench: clean init
 
 init:
 	GO111MODULE=on go mod init
-	GO111MODULE=on go mod vendor
+	GO111MODULE=on go mod tidy
 
 profile: clean init
 	rm -rf bench
