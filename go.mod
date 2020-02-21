@@ -10,7 +10,7 @@ require (
 	github.com/coocood/freecache v1.1.0
 	github.com/hlts2/gocache v0.0.0-20190217073200-8b772e486b6e
 	github.com/kpango/fastime v1.0.16
-	github.com/kpango/glg v1.5.0
+	github.com/kpango/glg v1.5.1
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prologic/bitcask v0.3.5
 	github.com/zeebo/xxh3 v0.0.0-20191227220208-65f423c10688
