@@ -14,5 +14,5 @@ require (
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prologic/bitcask v0.3.5
 	github.com/zeebo/xxh3 v0.0.0-20191227220208-65f423c10688
-	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
+	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
 )
