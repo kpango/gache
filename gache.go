@@ -13,8 +13,6 @@ import (
 	"github.com/kpango/fastime"
 	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/singleflight"
-	// "github.com/klauspost/compress/s2"
-	// "github.com/pierrec/lz4"
 )
 
 type (
@@ -405,9 +403,7 @@ func (g *gache) Write(ctx context.Context, w io.Writer) error {
 	})
 	gob.Register(map[string]interface{}{})
 
-	// return gob.NewEncoder(s2.NewWriter(w)).Encode(&m)
 	return gob.NewEncoder(w).Encode(&m)
-	// return gob.NewEncoder(lz4.NewWriter(w)).Encode(&m)
 }
 
 // Write writes all cached data to writer
@@ -419,9 +415,7 @@ func Write(ctx context.Context, w io.Writer) error {
 func (g *gache) Read(r io.Reader) error {
 	var m map[string]interface{}
 	gob.Register(map[string]interface{}{})
-	// err := gob.NewDecoder(s2.NewReader(r)).Decode(&m)
 	err := gob.NewDecoder(r).Decode(&m)
-	// err := gob.NewDecoder(lz4.NewReader(r)).Decode(&m)
 	if err != nil {
 		return err
 	}
