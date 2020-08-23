@@ -94,14 +94,15 @@ func init() {
 }
 
 // New returns Gache (*gache) instance
-func New() Gache {
-	return newGache()
+func New(opts ...Option) Gache {
+	return newGache(opts...)
 }
 
 // newGache returns *gache instance
-func newGache() *gache {
-	g := &gache{
-		expire: int64(time.Second * 30),
+func newGache(opts ...Option) *gache {
+	g := new(gache)
+	for _, opt := range append(defaultOpts, opts...) {
+		opt(g)
 	}
 	for i := range g.shards {
 		g.shards[i] = new(Map)

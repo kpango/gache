@@ -6,6 +6,7 @@ import (
 	"io"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,15 +14,19 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	type args struct {
+		opts []Option
+	}
 	tests := []struct {
 		name string
+		args args
 		want Gache
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := New(); !reflect.DeepEqual(got, tt.want) {
+			if got := New(tt.args.opts...); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("New() = %v, want %v", got, tt.want)
 			}
 		})
@@ -29,15 +34,19 @@ func TestNew(t *testing.T) {
 }
 
 func Test_newGache(t *testing.T) {
+	type args struct {
+		opts []Option
+	}
 	tests := []struct {
 		name string
+		args args
 		want *gache
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := newGache(); !reflect.DeepEqual(got, tt.want) {
+			if got := newGache(tt.args.opts...); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("newGache() = %v, want %v", got, tt.want)
 			}
 		})
@@ -91,6 +100,7 @@ func Test_gache_SetDefaultExpire(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -113,6 +123,7 @@ func Test_gache_SetDefaultExpire(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -150,6 +161,7 @@ func Test_gache_EnableExpiredHook(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -168,6 +180,7 @@ func Test_gache_EnableExpiredHook(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -201,6 +214,7 @@ func Test_gache_DisableExpiredHook(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -219,6 +233,7 @@ func Test_gache_DisableExpiredHook(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -252,6 +267,7 @@ func Test_gache_SetExpiredHook(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -274,6 +290,7 @@ func Test_gache_SetExpiredHook(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -311,6 +328,7 @@ func Test_gache_StartExpired(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -334,6 +352,7 @@ func Test_gache_StartExpired(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -351,6 +370,7 @@ func Test_gache_ToMap(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -373,6 +393,7 @@ func Test_gache_ToMap(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -410,6 +431,7 @@ func Test_gache_ToRawMap(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -432,6 +454,7 @@ func Test_gache_ToRawMap(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -469,6 +492,7 @@ func Test_gache_get(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -493,6 +517,7 @@ func Test_gache_get(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -517,6 +542,7 @@ func Test_gache_Get(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -540,6 +566,7 @@ func Test_gache_Get(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -586,6 +613,7 @@ func Test_gache_GetWithExpire(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -610,6 +638,7 @@ func Test_gache_GetWithExpire(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -663,6 +692,7 @@ func Test_gache_set(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -686,6 +716,7 @@ func Test_gache_set(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -701,6 +732,7 @@ func Test_gache_SetWithExpire(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -724,6 +756,7 @@ func Test_gache_SetWithExpire(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -758,6 +791,7 @@ func Test_gache_Set(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -780,6 +814,7 @@ func Test_gache_Set(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -813,6 +848,7 @@ func Test_gache_Delete(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -834,6 +870,7 @@ func Test_gache_Delete(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -866,6 +903,7 @@ func Test_gache_expiration(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -887,6 +925,7 @@ func Test_gache_expiration(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -902,6 +941,7 @@ func Test_gache_DeleteExpired(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -924,6 +964,7 @@ func Test_gache_DeleteExpired(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -961,6 +1002,7 @@ func Test_gache_Foreach(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -984,6 +1026,7 @@ func Test_gache_Foreach(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -1038,6 +1081,7 @@ func Test_gache_Len(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -1056,6 +1100,7 @@ func Test_gache_Len(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -1073,6 +1118,7 @@ func Test_gache_Write(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -1096,6 +1142,7 @@ func Test_gache_Write(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -1144,6 +1191,7 @@ func Test_gache_Read(t *testing.T) {
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -1166,6 +1214,7 @@ func Test_gache_Read(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
@@ -1197,12 +1246,13 @@ func TestRead(t *testing.T) {
 	}
 }
 
-func Test_gache_Clear(t *testing.T) {
+func Test_gache_Stop(t *testing.T) {
 	type fields struct {
 		expChan        chan string
 		expFunc        func(context.Context, string)
 		expFuncEnabled bool
 		expGroup       singleflight.Group
+		cancel         atomic.Value
 		expire         int64
 		l              uint64
 		shards         [slen]*Map
@@ -1220,6 +1270,54 @@ func Test_gache_Clear(t *testing.T) {
 				expFunc:        tt.fields.expFunc,
 				expFuncEnabled: tt.fields.expFuncEnabled,
 				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
+				expire:         tt.fields.expire,
+				l:              tt.fields.l,
+				shards:         tt.fields.shards,
+			}
+			g.Stop()
+		})
+	}
+}
+
+func TestStop(t *testing.T) {
+	tests := []struct {
+		name string
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			Stop()
+		})
+	}
+}
+
+func Test_gache_Clear(t *testing.T) {
+	type fields struct {
+		expChan        chan string
+		expFunc        func(context.Context, string)
+		expFuncEnabled bool
+		expGroup       singleflight.Group
+		cancel         atomic.Value
+		expire         int64
+		l              uint64
+		shards         [slen]*Map
+	}
+	tests := []struct {
+		name   string
+		fields fields
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &gache{
+				expChan:        tt.fields.expChan,
+				expFunc:        tt.fields.expFunc,
+				expFuncEnabled: tt.fields.expFuncEnabled,
+				expGroup:       tt.fields.expGroup,
+				cancel:         tt.fields.cancel,
 				expire:         tt.fields.expire,
 				l:              tt.fields.l,
 				shards:         tt.fields.shards,
