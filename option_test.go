@@ -1,6 +1,3 @@
-Generated TestWithDefaultExpirationString
-Generated TestWithDefaultExpiration
-Generated TestWithExpiredHookFunc
 package gache
 
 import (
