@@ -102,8 +102,8 @@ func TestMap_Store(t *testing.T) {
 		misses int
 	}
 	type args struct {
-		key string
-		val value
+		key   string
+		value value
 	}
 	tests := []struct {
 		name   string
@@ -120,7 +120,7 @@ func TestMap_Store(t *testing.T) {
 				dirty:  tt.fields.dirty,
 				misses: tt.fields.misses,
 			}
-			m.Store(tt.args.key, tt.args.val)
+			m.Store(tt.args.key, tt.args.value)
 		})
 	}
 }
@@ -199,6 +199,44 @@ func Test_entryMap_storeLocked(t *testing.T) {
 	}
 }
 
+func TestMap_LoadAndDelete(t *testing.T) {
+	type fields struct {
+		mu     sync.Mutex
+		read   atomic.Value
+		dirty  map[string]*entryMap
+		misses int
+	}
+	type args struct {
+		key string
+	}
+	tests := []struct {
+		name       string
+		fields     fields
+		args       args
+		wantValue  value
+		wantLoaded bool
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &Map{
+				mu:     tt.fields.mu,
+				read:   tt.fields.read,
+				dirty:  tt.fields.dirty,
+				misses: tt.fields.misses,
+			}
+			gotValue, gotLoaded := m.LoadAndDelete(tt.args.key)
+			if !reflect.DeepEqual(gotValue, tt.wantValue) {
+				t.Errorf("Map.LoadAndDelete() gotValue = %v, want %v", gotValue, tt.wantValue)
+			}
+			if gotLoaded != tt.wantLoaded {
+				t.Errorf("Map.LoadAndDelete() gotLoaded = %v, want %v", gotLoaded, tt.wantLoaded)
+			}
+		})
+	}
+}
+
 func TestMap_Delete(t *testing.T) {
 	type fields struct {
 		mu     sync.Mutex
@@ -234,9 +272,10 @@ func Test_entryMap_delete(t *testing.T) {
 		p unsafe.Pointer
 	}
 	tests := []struct {
-		name         string
-		fields       fields
-		wantHadValue bool
+		name    string
+		fields  fields
+		wantVal value
+		wantOk  bool
 	}{
 		// TODO: Add test cases.
 	}
@@ -245,8 +284,12 @@ func Test_entryMap_delete(t *testing.T) {
 			e := &entryMap{
 				p: tt.fields.p,
 			}
-			if gotHadValue := e.delete(); gotHadValue != tt.wantHadValue {
-				t.Errorf("entryMap.delete() = %v, want %v", gotHadValue, tt.wantHadValue)
+			gotVal, gotOk := e.delete()
+			if !reflect.DeepEqual(gotVal, tt.wantVal) {
+				t.Errorf("entryMap.delete() gotVal = %v, want %v", gotVal, tt.wantVal)
+			}
+			if gotOk != tt.wantOk {
+				t.Errorf("entryMap.delete() gotOk = %v, want %v", gotOk, tt.wantOk)
 			}
 		})
 	}

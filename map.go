@@ -55,9 +55,9 @@ func (e *entryMap) load() (val value, ok bool) {
 	return *(*value)(p), true
 }
 
-func (m *Map) Store(key string, val value) {
+func (m *Map) Store(key string, value value) {
 	read, _ := m.read.Load().(readOnlyMap)
-	if e, ok := read.m[key]; ok && e.tryStore(&val) {
+	if e, ok := read.m[key]; ok && e.tryStore(&value) {
 		return
 	}
 
@@ -67,15 +67,15 @@ func (m *Map) Store(key string, val value) {
 		if e.unexpungeLocked() {
 			m.dirty[key] = e
 		}
-		e.storeLocked(&val)
+		e.storeLocked(&value)
 	} else if e, ok := m.dirty[key]; ok {
-		e.storeLocked(&val)
+		e.storeLocked(&value)
 	} else {
 		if !read.amended {
 			m.dirtyLocked()
 			m.read.Store(readOnlyMap{m: read.m, amended: true})
 		}
-		m.dirty[key] = newEntryMap(val)
+		m.dirty[key] = newEntryMap(value)
 	}
 	m.mu.Unlock()
 }
@@ -100,7 +100,7 @@ func (e *entryMap) storeLocked(i *value) {
 	atomic.StorePointer(&e.p, unsafe.Pointer(i))
 }
 
-func (m *Map) Delete(key string) {
+func (m *Map) LoadAndDelete(key string) (value value, loaded bool) {
 	read, _ := m.read.Load().(readOnlyMap)
 	e, ok := read.m[key]
 	if !ok && read.amended {
@@ -108,23 +108,30 @@ func (m *Map) Delete(key string) {
 		read, _ = m.read.Load().(readOnlyMap)
 		e, ok = read.m[key]
 		if !ok && read.amended {
+			e, ok = m.dirty[key]
 			delete(m.dirty, key)
+			m.missLocked()
 		}
 		m.mu.Unlock()
 	}
 	if ok {
-		e.delete()
+		return e.delete()
 	}
+	return value, false
 }
 
-func (e *entryMap) delete() (hadValue bool) {
+func (m *Map) Delete(key string) {
+	m.LoadAndDelete(key)
+}
+
+func (e *entryMap) delete() (val value, ok bool) {
 	for {
 		p := atomic.LoadPointer(&e.p)
 		if p == nil || p == expungedMap {
-			return false
+			return val, false
 		}
 		if atomic.CompareAndSwapPointer(&e.p, p, nil) {
-			return true
+			return *(*value)(p), true
 		}
 	}
 }
