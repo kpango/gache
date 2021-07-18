@@ -7,6 +7,8 @@ github.com/kpango/fastime v1.0.17 h1:IZOBLEJrr2MIpsY1ihGhpkY+9pEikJWYwPEMu0/VdcY
 github.com/kpango/fastime v1.0.17/go.mod h1:lVqUTcXmQnk1wriyvq5DElbRSRDC0XtqbXQRdz0Eo+g=
 github.com/kpango/glg v1.6.2 h1:cwSfJQuEe38CbGQOcArW87Gow+RbEXV+nqx1ypbzL5s=
 github.com/kpango/glg v1.6.2/go.mod h1:nW5//GFgKG9rCvrDj+4AK4lBS8X608jtBIOyO+EoWXc=
+github.com/kpango/glg v1.6.4 h1:r1oCPNDOXRvS64idr4b2NoVNORNfJjOedOAU10PrfO8=
+github.com/kpango/glg v1.6.4/go.mod h1:nW5//GFgKG9rCvrDj+4AK4lBS8X608jtBIOyO+EoWXc=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
 github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
 github.com/kr/text v0.1.0/go.mod h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=
