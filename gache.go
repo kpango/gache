@@ -59,13 +59,13 @@ type (
 
 	// gache is base instance type
 	gache struct {
-		expChan        chan string
-		expFunc        func(context.Context, string)
 		expFuncEnabled bool
-		expGroup       singleflight.Group
-		cancel         atomic.Value
 		expire         int64
 		l              uint64
+		cancel         atomic.Value
+		expGroup       singleflight.Group
+		expChan        chan string
+		expFunc        func(context.Context, string)
 		shards         [slen]*Map
 	}
 

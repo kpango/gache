@@ -7,10 +7,10 @@ import (
 )
 
 type Map struct {
+	misses int
 	mu     sync.Mutex
 	read   atomic.Value
 	dirty  map[string]*entryMap
-	misses int
 }
 
 type readOnlyMap struct {
