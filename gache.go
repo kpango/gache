@@ -20,7 +20,7 @@ type (
 	// Gache is base interface type
 	Gache[V any] interface {
 		Clear()
-		Delete(string) (V, bool)
+		Delete(string) (bool)
 		DeleteExpired(context.Context) uint64
 		DisableExpiredHook() Gache[V]
 		EnableExpiredHook() Gache[V]
@@ -190,8 +190,6 @@ func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 func (g *gache[V]) get(key string) (V, int64, bool) {
 	var val V
 	v, ok := g.shards[xxh3.HashString(key)&mask].Get(key)
-	// v, ok := g.shards[xxh3.HashString(key)&mask].Load(key)
-
 	if !ok {
 		return val, 0, false
 	}
@@ -222,8 +220,6 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 		expire = fastime.UnixNanoNow() + expire
 	}
 	atomic.AddUint64(&g.l, 1)
-
-	// g.shards[xxh3.HashString(key)&mask].Store(key, value[V]{
 	g.shards[xxh3.HashString(key)&mask].Set(key, value[V]{
 		expire: expire,
 		val:    val,
@@ -241,16 +237,9 @@ func (g *gache[V]) Set(key string, val V) {
 }
 
 // Delete deletes value from Gache using key
-func (g *gache[V]) Delete(key string) (val V, loaded bool) {
+func (g *gache[V]) Delete(key string) (loaded bool) {
 	atomic.AddUint64(&g.l, ^uint64(0))
-	loaded = g.shards[xxh3.HashString(key)&mask].Del(key)
-	return val, loaded
-	// v, loaded := g.shards[xxh3.HashString(key)&mask].LoadAndDelete(key)
-	// if loaded && v.isValid() {
-	// 	val = v.val
-	// 	return val, true
-	// }
-	// return val, false
+	return g.shards[xxh3.HashString(key)&mask].Del(key)
 }
 
 func (g *gache[V]) expiration(key string) {
