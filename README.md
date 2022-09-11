@@ -95,42 +95,60 @@ go get github.com/kpango/gache
 
 ```
 ## Benchmarks
-
-[gache](https://github.com/kpango/gache) vs [gocache](https://github.com/hlts2/gocache) vs [normal map with lock](https://github.com/kpango/gache/blob/main/gache_bench_test.go#L13-L35) vs [go-cache](https://github.com/patrickmn/go-cache) vs [gcache](https://github.com/bluele/gcache) vs [freecache](https://github.com/coocood/freecache) vs [bigcache](https://github.com/allegro/bigcache) vs [go-mcache](https://github.com/OrlovEvgeny/go-mcache)
-
+Benchmark results are shown below and benchmarked in [this](https://github.com/kpango/go-cache-lib-benchmarks) repository
 
 ```ltsv
 go test -count=1 -run=NONE -bench . -benchmem
-
-goos: darwin
+goos: linux
 goarch: amd64
-pkg: github.com/kpango/gache
-BenchmarkGacheWithSmallDataset-8       	 5000000	       250 ns/op	     192 B/op	       8 allocs/op
-BenchmarkGacheWithBigDataset-8         	     500	   3179552 ns/op	  485156 B/op	   20160 allocs/op
-BenchmarkGocacheWithSmallDataset-8     	 3000000	       378 ns/op	     323 B/op	      16 allocs/op
-BenchmarkGocacheWithBigDataset-8       	     300	   3564275 ns/op	  815303 B/op	   40352 allocs/op
-BenchmarkFastCacheWithSmallDataset-8   	 1000000	      1496 ns/op	      44 B/op	       4 allocs/op
-BenchmarkFastCacheWithBigDataset-8     	      50	  36815105 ns/op	126848505 B/op	   41603 allocs/op
-BenchmarkBigCacheWithSmallDataset-8    	 1000000	      1915 ns/op	     424 B/op	       8 allocs/op
-BenchmarkBigCacheWithBigDataset-8      	      30	  62743673 ns/op	227737772 B/op	   32892 allocs/op
-BenchmarkFreeCacheWithSmallDataset-8   	 1000000	      2659 ns/op	      31 B/op	       4 allocs/op
-BenchmarkFreeCacheWithBigDataset-8     	      50	  26550884 ns/op	126889120 B/op	   41552 allocs/op
-BenchmarkMapWithSmallDataset-8         	  500000	      4221 ns/op	     137 B/op	       8 allocs/op
-BenchmarkMapWithBigDataset-8           	     100	  10926857 ns/op	  358593 B/op	   20808 allocs/op
-BenchmarkGoCacheWithSmallDataset-8     	  500000	      3870 ns/op	      73 B/op	       4 allocs/op
-BenchmarkGoCacheWithBigDataset-8       	     100	  10858366 ns/op	  201482 B/op	   10809 allocs/op
-BenchmarkGCacheLRUWithSmallDataset-8   	  200000	      7913 ns/op	     348 B/op	      16 allocs/op
-BenchmarkGCacheLRUWithBigDataset-8     	      50	  21157440 ns/op	 2026806 B/op	   61756 allocs/op
-BenchmarkGCacheLFUWithSmallDataset-8   	  200000	     10704 ns/op	     542 B/op	      20 allocs/op
-BenchmarkGCacheLFUWithBigDataset-8     	      50	  22017917 ns/op	 1491388 B/op	   51602 allocs/op
-BenchmarkGCacheARCWithSmallDataset-8   	  200000	     10987 ns/op	     350 B/op	      16 allocs/op
-BenchmarkGCacheARCWithBigDataset-8     	      20	  64480186 ns/op	 3068799 B/op	   84008 allocs/op
-BenchmarkMCacheWithSmallDataset-8      	  100000	     18578 ns/op	    4373 B/op	      41 allocs/op
-BenchmarkMCacheWithBigDataset-8        	      30	  34827645 ns/op	10851422 B/op	  102187 allocs/op
-BenchmarkBitcaskWithSmallDataset-8     	   30000	     55917 ns/op	    2455 B/op	      49 allocs/op
-BenchmarkBitcaskWithBigDataset-8       	     200	  10602661 ns/op	10502332 B/op	   11091 allocs/op
+pkg: github.com/kpango/go-cache-lib-benchmarks
+cpu: Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
+BenchmarkDefaultMapSetSmallDataNoTTL-16     	 3378945	       916.9 ns/op	       4 B/op	       0 allocs/op
+BenchmarkDefaultMapSetBigDataNoTTL-16       	   12446	    198876 ns/op	    1381 B/op	      27 allocs/op
+BenchmarkSyncMapSetSmallDataNoTTL-16        	 5364061	       222.5 ns/op	     194 B/op	      12 allocs/op
+BenchmarkSyncMapSetBigDataNoTTL-16          	   16467	     73703 ns/op	   25447 B/op	    1556 allocs/op
+BenchmarkGacheSetSmallDataNoTTL-16          	 1874124	       533.7 ns/op	     231 B/op	      12 allocs/op
+BenchmarkGacheSetSmallDataWithTTL-16        	 1901086	       558.5 ns/op	     231 B/op	      12 allocs/op
+BenchmarkGacheSetBigDataNoTTL-16            	   28442	     38329 ns/op	   29166 B/op	    1547 allocs/op
+BenchmarkGacheSetBigDataWithTTL-16          	   30856	     38755 ns/op	   29162 B/op	    1547 allocs/op
+BenchmarkTTLCacheSetSmallDataNoTTL-16       	  862920	      1633 ns/op	     208 B/op	       4 allocs/op
+BenchmarkTTLCacheSetSmallDataWithTTL-16     	  274393	      4322 ns/op	     242 B/op	       5 allocs/op
+BenchmarkTTLCacheSetBigDataNoTTL-16         	    4968	    334135 ns/op	   27287 B/op	     577 allocs/op
+BenchmarkTTLCacheSetBigDataWithTTL-16       	    2004	    728444 ns/op	   31149 B/op	     673 allocs/op
+BenchmarkGoCacheSetSmallDataNoTTL-16        	 2186665	      1587 ns/op	      70 B/op	       4 allocs/op
+BenchmarkGoCacheSetSmallDataWithTTL-16      	 1074262	      2541 ns/op	      77 B/op	       4 allocs/op
+BenchmarkGoCacheSetBigDataNoTTL-16          	    5450	    406692 ns/op	   10659 B/op	     571 allocs/op
+BenchmarkGoCacheSetBigDataWithTTL-16        	    3468	    518512 ns/op	   12014 B/op	     605 allocs/op
+BenchmarkBigCacheSetSmallDataNoTTL-16       	  673636	      1803 ns/op	     286 B/op	       8 allocs/op
+BenchmarkBigCacheSetSmallDataWithTTL-16     	  650728	      1767 ns/op	     294 B/op	       8 allocs/op
+BenchmarkBigCacheSetBigDataNoTTL-16         	    3694	    355458 ns/op	 1944206 B/op	    1624 allocs/op
+BenchmarkBigCacheSetBigDataWithTTL-16       	    5222	    374449 ns/op	 1675416 B/op	    1598 allocs/op
+BenchmarkFastCacheSetSmallDataNoTTL-16      	  909879	      1296 ns/op	      55 B/op	       4 allocs/op
+BenchmarkFastCacheSetBigDataNoTTL-16        	   11193	    249992 ns/op	  795568 B/op	    2057 allocs/op
+BenchmarkFreeCacheSetSmallDataNoTTL-16      	  913647	      1241 ns/op	     137 B/op	       8 allocs/op
+BenchmarkFreeCacheSetSmallDataWithTTL-16    	  994545	      1232 ns/op	     136 B/op	       8 allocs/op
+BenchmarkFreeCacheSetBigDataNoTTL-16        	   11065	    300772 ns/op	 1062087 B/op	    2589 allocs/op
+BenchmarkFreeCacheSetBigDataWithTTL-16      	   11018	    259470 ns/op	 1061975 B/op	    2589 allocs/op
+BenchmarkGCacheLRUSetSmallDataNoTTL-16      	  309943	      5940 ns/op	     747 B/op	      24 allocs/op
+BenchmarkGCacheLRUSetSmallDataWithTTL-16    	  565794	      2382 ns/op	     312 B/op	      16 allocs/op
+BenchmarkGCacheLRUSetBigDataNoTTL-16        	    2870	    695645 ns/op	  100849 B/op	    3185 allocs/op
+BenchmarkGCacheLRUSetBigDataWithTTL-16      	    1455	    717338 ns/op	  105173 B/op	    3294 allocs/op
+BenchmarkGCacheLFUSetSmallDataNoTTL-16      	  490386	      4533 ns/op	     545 B/op	      20 allocs/op
+BenchmarkGCacheLFUSetSmallDataWithTTL-16    	  527766	      2972 ns/op	     314 B/op	      16 allocs/op
+BenchmarkGCacheLFUSetBigDataNoTTL-16        	    1478	    689599 ns/op	   80439 B/op	    2783 allocs/op
+BenchmarkGCacheLFUSetBigDataWithTTL-16      	    2341	    549463 ns/op	   74897 B/op	    2697 allocs/op
+BenchmarkGCacheARCSetSmallDataNoTTL-16      	  321163	      6582 ns/op	     936 B/op	      28 allocs/op
+BenchmarkGCacheARCSetSmallDataWithTTL-16    	  453481	      4034 ns/op	     318 B/op	      16 allocs/op
+BenchmarkGCacheARCSetBigDataNoTTL-16        	    1428	   1063506 ns/op	  131515 B/op	    3793 allocs/op
+BenchmarkGCacheARCSetBigDataWithTTL-16      	     978	   1199343 ns/op	  130454 B/op	    3859 allocs/op
+BenchmarkMCacheSetSmallDataNoTTL-16         	  168380	      7084 ns/op	    2431 B/op	      33 allocs/op
+BenchmarkMCacheSetSmallDataWithTTL-16       	  133646	      7996 ns/op	    2412 B/op	      35 allocs/op
+BenchmarkMCacheSetBigDataNoTTL-16           	    1773	    855008 ns/op	  307511 B/op	    4277 allocs/op
+BenchmarkMCacheSetBigDataWithTTL-16         	    1687	    782911 ns/op	  271697 B/op	    4390 allocs/op
+BenchmarkBitcaskSetSmallDataNoTTL-16        	   61621	     18411 ns/op	     667 B/op	      29 allocs/op
+BenchmarkBitcaskSetBigDataNoTTL-16          	   12972	    215781 ns/op	  787419 B/op	    1560 allocs/op
 PASS
-ok  	github.com/kpango/gache	67.249s
+ok  	github.com/kpango/go-cache-lib-benchmarks	105.898s
 ```
 
 ## Contribution
