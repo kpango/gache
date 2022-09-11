@@ -5,29 +5,23 @@ import (
 	"time"
 )
 
-type Option func(g *gache) error
+type Option[V any] func(g *gache[V]) error
 
-var (
-	defaultOpts = []Option{
-		WithDefaultExpiration(time.Second * 30),
-	}
-)
-
-func WithDefaultExpirationString(t string) Option {
-	return func(g *gache) error {
+func WithDefaultExpirationString[V any](t string) Option[V] {
+	return func(g *gache[V]) error {
 		if len(t) != 0 {
 			dur, err := time.ParseDuration(t)
 			if err != nil {
 				return err
 			}
-			return WithDefaultExpiration(dur)(g)
+			return WithDefaultExpiration[V](dur)(g)
 		}
 		return nil
 	}
 }
 
-func WithDefaultExpiration(dur time.Duration) Option {
-	return func(g *gache) error {
+func WithDefaultExpiration[V any](dur time.Duration) Option[V] {
+	return func(g *gache[V]) error {
 		if dur > 0 {
 			g.expire = dur.Nanoseconds()
 		}
@@ -35,8 +29,8 @@ func WithDefaultExpiration(dur time.Duration) Option {
 	}
 }
 
-func WithExpiredHookFunc(f func(ctx context.Context, key string)) Option {
-	return func(g *gache) error {
+func WithExpiredHookFunc[V any](f func(ctx context.Context, key string)) Option[V] {
+	return func(g *gache[V]) error {
 		if f != nil {
 			g.expFunc = f
 			g.expFuncEnabled = true

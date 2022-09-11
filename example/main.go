@@ -19,28 +19,7 @@ func main() {
 		value3 = struct{}{}
 	)
 
-	gache.GetGache().StartExpired(context.Background(), time.Hour)
-	// store plain cache default expire is 30 Seconds
-	gache.Set(key1, value3)
-	gache.Set(key2, value2)
-	gache.Set(key3, value1)
-	// get cache data
-	v1, ok := gache.Get(key1)
-	if ok {
-		glg.Info(v1)
-	}
-	v2, ok := gache.Get(key2)
-	if ok {
-		glg.Info(v2)
-	}
-	v3, ok := gache.Get(key3)
-	if ok {
-		glg.Info(v3)
-	}
-
-	glg.Debugf("Len:\t%d", gache.Len())
-	// set gache default expire time
-	gc := gache.New().SetDefaultExpire(time.Second * 10)
+	gc := gache.New[any]().SetDefaultExpire(time.Second * 10)
 
 	// store with expire setting
 	gc.SetWithExpire(key1, value1, time.Second*30)
@@ -61,12 +40,12 @@ func main() {
 		glg.Info(v6)
 	}
 
-	gache.Foreach(context.Background(), func(k string, v interface{}, exp int64) bool {
+	gc.Range(context.Background(), func(k string, v any, exp int64) bool {
 		glg.Debugf("key:\t%v\nval:\t%v", k, v)
 		return true
 	})
 
-	file, err := os.OpenFile("./gache-sample.gdb", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0755)
+	file, err := os.OpenFile("/tmp/gache-sample.gdb", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
 		glg.Error(err)
 		return
@@ -75,8 +54,8 @@ func main() {
 
 	file.Close()
 
-	gcn := gache.New().SetDefaultExpire(time.Minute)
-	file, err = os.OpenFile("./gache-sample.gdb", os.O_RDONLY, 0755)
+	gcn := gache.New[any]().SetDefaultExpire(time.Minute)
+	file, err = os.OpenFile("/tmp/gache-sample.gdb", os.O_RDONLY, 0755)
 	if err != nil {
 		glg.Error(err)
 		return
@@ -91,8 +70,22 @@ func main() {
 		return
 	}
 
-	gcn.Foreach(context.Background(), func(k string, v interface{}, exp int64) bool {
+	gcn.Range(context.Background(), func(k string, v interface{}, exp int64) bool {
 		glg.Warnf("key:\t%v\nval:\t%v", k, v)
+		return true
+	})
+
+
+        // instantiage new gache for int64 type as gci
+        gci := gache.New[int64]()
+
+        gci.Set("sample1", int64(0))
+        gci.Set("sample2", int64(10))
+        gci.Set("sample3", int64(100))
+
+        // gache supports range loop processing method and inner function argument is int64 as contract
+	gci.Range(context.Background(), func(k string, v int64, exp int64) bool {
+		glg.Debugf("key:\t%v\nval:\t%d", k, v)
 		return true
 	})
 }

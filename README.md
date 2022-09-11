@@ -38,21 +38,61 @@ go get github.com/kpango/gache
 		value3 = struct{}{}
 	)
 
-	// store cache default expire is 30 Seconds
-	gache.Set(key1, value3)
-	gache.Set(key2, value2)
-	gache.Set(key3, value1)
+        // instantiate gache for any type as gc with setup default expiration.
+        // see more Options in example/main.go
+	gc := gache.New[any]().SetDefaultExpire(time.Second * 10)
 
-	// load cache data
-	v1, ok := gache.Get(key1)
+	// store with expire setting
+	gc.SetWithExpire(key1, value1, time.Second*30)
+	gc.SetWithExpire(key2, value2, time.Second*60)
+	gc.SetWithExpire(key3, value3, time.Hour)	// load cache data
+	v1, ok := gc.Get(key1)
 
-	v2, ok := gache.Get(key2)
+	v2, ok := gc.Get(key2)
 
-	v3, ok := gache.Get(key3)
+	v3, ok := gc.Get(key3)
 
+        // open exported cache file
+        file, err := os.OpenFile("./gache-sample.gdb", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0755)
+	if err != nil {
+		glg.Error(err)
+		return
+	}
 
-	gache.Write(context.Background(), glg.FileWriter("./gache-sample.gdb", 0755))
-	gache.New().SetDefaultExpire(time.Minute).Read(glg.FileWriter("./gache-sample.gdb", 0755))
+        // export cached variable with expiration time 
+	gc.Write(context.Background(), file)
+        file.Close()
+
+        // open exported cache file
+	file, err = os.OpenFile("./gache-sample.gdb", os.O_RDONLY, 0755)
+	if err != nil {
+		glg.Error(err)
+		return
+	}
+        defer file.Close()
+
+        // instantiate new gache for any type as gcn with load exported cache from file
+	gcn := gache.New[any]().SetDefaultExpire(time.Minute).Read(file)
+
+        // gache supports range loop processing method
+	gcn.Range(context.Background(), func(k string, v any, exp int64) bool {
+		glg.Debugf("key:\t%v\nval:\t%v", k, v)
+		return true
+	})
+
+        // instantiate new gache for int64 type as gci
+        gci := gache.New[int64]()
+
+        gci.Set("sample1", int64(0))
+        gci.Set("sample2", int64(10))
+        gci.Set("sample3", int64(100))
+
+        // gache supports range loop processing method and inner function argument is int64 as contract
+	gci.Range(context.Background(), func(k string, v int64, exp int64) bool {
+		glg.Debugf("key:\t%v\nval:\t%d", k, v)
+		return true
+	})
+
 ```
 ## Benchmarks
 
