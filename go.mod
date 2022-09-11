@@ -1,4 +1,4 @@
-module github.com/kpango/gache
+module github.com/kpango/gache/v2
 
 go 1.19
 
