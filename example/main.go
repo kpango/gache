@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/kpango/gache"
+	"github.com/kpango/gache/v2"
 	"github.com/kpango/glg"
 )
 
