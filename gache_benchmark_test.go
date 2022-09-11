@@ -1,7 +1,6 @@
 package gache
 
 import (
-	"math"
 	"math/rand"
 	"sync"
 	"testing"

@@ -11,7 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/kpango/fastime"
-	"github.com/puzpuzpuz/xsync"
+	"github.com/cornelk/hashmap"
 	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/singleflight"
 )
@@ -67,7 +67,7 @@ type (
 		expGroup       singleflight.Group
 		expChan        chan string
 		expFunc        func(context.Context, string)
-		shards         [slen]*xsync.MapOf[value[V]]
+		shards         [slen]*hashmap.Map[string, value[V]]
 	}
 
 	value[V any] struct {
@@ -97,10 +97,18 @@ func New[V any](opts ...Option[V]) Gache[V] {
 		opt(g)
 	}
 	for i := range g.shards {
-		g.shards[i] = xsync.NewMapOf[value[V]]()
+		g.shards[i] = newMap[V]()
 	}
 	g.expChan = make(chan string, len(g.shards)*10)
 	return g
+}
+
+func newMap[V any]() (m *hashmap.Map[string, value[V]]) {
+	m = hashmap.New[string, value[V]]()
+	m.SetHasher(func(k string) uintptr {
+		return uintptr(xxh3.HashString(k))
+	})
+	return m
 }
 
 // isValid checks expiration of value
@@ -181,7 +189,8 @@ func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 // get returns value & exists from key
 func (g *gache[V]) get(key string) (V, int64, bool) {
 	var val V
-	v, ok := g.shards[xxh3.HashString(key)&mask].Load(key)
+	v, ok := g.shards[xxh3.HashString(key)&mask].Get(key)
+	// v, ok := g.shards[xxh3.HashString(key)&mask].Load(key)
 
 	if !ok {
 		return val, 0, false
@@ -214,7 +223,8 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	}
 	atomic.AddUint64(&g.l, 1)
 
-	g.shards[xxh3.HashString(key)&mask].Store(key, value[V]{
+	// g.shards[xxh3.HashString(key)&mask].Store(key, value[V]{
+	g.shards[xxh3.HashString(key)&mask].Set(key, value[V]{
 		expire: expire,
 		val:    val,
 	})
@@ -233,12 +243,14 @@ func (g *gache[V]) Set(key string, val V) {
 // Delete deletes value from Gache using key
 func (g *gache[V]) Delete(key string) (val V, loaded bool) {
 	atomic.AddUint64(&g.l, ^uint64(0))
-	v, loaded := g.shards[xxh3.HashString(key)&mask].LoadAndDelete(key)
-	if loaded && v.isValid() {
-		val = v.val
-		return val, true
-	}
-	return val, false
+	loaded = g.shards[xxh3.HashString(key)&mask].Del(key)
+	return val, loaded
+	// v, loaded := g.shards[xxh3.HashString(key)&mask].LoadAndDelete(key)
+	// if loaded && v.isValid() {
+	// 	val = v.val
+	// 	return val, true
+	// }
+	// return val, false
 }
 
 func (g *gache[V]) expiration(key string) {
@@ -353,6 +365,6 @@ func (g *gache[V]) Stop() {
 // Clear deletes all key and value present in the Gache.
 func (g *gache[V]) Clear() {
 	for i := range g.shards {
-		g.shards[i] = xsync.NewMapOf[value[V]]()
+		g.shards[i] = newMap[V]()
 	}
 }

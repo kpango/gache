@@ -1,3 +1,5 @@
+github.com/cornelk/hashmap v1.0.8 h1:nv0AWgw02n+iDcawr5It4CjQIAcdMMKRrs10HOJYlrc=
+github.com/cornelk/hashmap v1.0.8/go.mod h1:RfZb7JO3RviW/rT6emczVuC/oxpdz4UsSB2LJSclR1k=
 github.com/goccy/go-json v0.9.11 h1:/pAaQDLHEoCq/5FFmSKBswWmK6H0e8g4159Kc/X/nqk=
 github.com/goccy/go-json v0.9.11/go.mod h1:6MelG93GURQebXPDq3khkgXZkazVtN9CRI+MGFi0w8I=
 github.com/klauspost/cpuid/v2 v2.0.9 h1:lgaqFMSdTdQYdZ04uHyN2d/eKdOMyi2YLSvlQIBFYa4=
@@ -6,8 +8,6 @@ github.com/kpango/fastime v1.1.4 h1:pus9JgJBg/8Jie3ozayA4yNIV67BUPhbq0wMZY3CtYo=
 github.com/kpango/fastime v1.1.4/go.mod h1:tTNDbIo5qL6D7g5vh2YbkyUbOVP2kD/we3rSjN22PMY=
 github.com/kpango/glg v1.6.13 h1:QMhxOm/Oo1k8qraMtH4SQOYIgB/SI2RW2Hvrn1kgAZw=
 github.com/kpango/glg v1.6.13/go.mod h1:fwP/c6NJTXe0vd9L3He6myDnO33lFVfgQGtGmlMnyws=
-github.com/puzpuzpuz/xsync v1.4.3 h1:nS/Iqc4EnpJ8jm/MzJ+e3MUaP2Ys2mqXeEfoxoU0HaM=
-github.com/puzpuzpuz/xsync v1.4.3/go.mod h1:K98BYhX3k1dQ2M63t1YNVDanbwUPmBCAhNmVrrxfiGg=
 github.com/sirupsen/logrus v1.9.0 h1:trlNQbNUG3OdDrDil03MCb1H2o9nJ1x4/5LYw7byDE0=
 github.com/zeebo/assert v1.3.0 h1:g7C04CbJuIDKNPFHmsk4hwZDO5O+kntRxzaUoNXj+IQ=
 github.com/zeebo/xxh3 v1.0.2 h1:xZmwmqxHZA8AI603jOQ0tMqmBr9lPeFwGg6d+xy9DC0=
