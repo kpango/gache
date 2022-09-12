@@ -96,9 +96,7 @@ func New[V any](opts ...Option[V]) Gache[V] {
 	}, opts...) {
 		opt(g)
 	}
-	for i := range g.shards {
-		g.shards[i] = newMap[V]()
-	}
+	g.Clear()
 	g.expChan = make(chan string, len(g.shards)*10)
 	return g
 }
