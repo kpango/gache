@@ -10,8 +10,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/kpango/fastime"
 	"github.com/cornelk/hashmap"
+	"github.com/kpango/fastime"
 	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/singleflight"
 )
@@ -20,7 +20,7 @@ type (
 	// Gache is base interface type
 	Gache[V any] interface {
 		Clear()
-		Delete(string) (bool)
+		Delete(string) bool
 		DeleteExpired(context.Context) uint64
 		DisableExpiredHook() Gache[V]
 		EnableExpiredHook() Gache[V]
@@ -109,11 +109,11 @@ func newMap[V any]() (m *hashmap.Map[string, value[V]]) {
 	return m
 }
 
-func getShardID(key string)uint64{
-	if len(key) > 128{
-		return xxh3.HashString(key[:128])&mask
+func getShardID(key string) uint64 {
+	if len(key) > 128 {
+		return xxh3.HashString(key[:128]) & mask
 	}
-	return xxh3.HashString(key)&mask
+	return xxh3.HashString(key) & mask
 }
 
 // isValid checks expiration of value
