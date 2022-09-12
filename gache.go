@@ -111,6 +111,13 @@ func newMap[V any]() (m *hashmap.Map[string, value[V]]) {
 	return m
 }
 
+func getShardID(key string)uint64{
+	if len(key) > 128{
+		return xxh3.HashString(key[:128])&mask
+	}
+	return xxh3.HashString(key)&mask
+}
+
 // isValid checks expiration of value
 func (v *value[V]) isValid() bool {
 	return v.expire <= 0 || fastime.UnixNanoNow() <= v.expire
@@ -189,7 +196,7 @@ func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 // get returns value & exists from key
 func (g *gache[V]) get(key string) (V, int64, bool) {
 	var val V
-	v, ok := g.shards[xxh3.HashString(key)&mask].Get(key)
+	v, ok := g.shards[getShardID(key)].Get(key)
 	if !ok {
 		return val, 0, false
 	}
@@ -220,7 +227,7 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 		expire = fastime.UnixNanoNow() + expire
 	}
 	atomic.AddUint64(&g.l, 1)
-	g.shards[xxh3.HashString(key)&mask].Set(key, value[V]{
+	g.shards[getShardID(key)].Set(key, value[V]{
 		expire: expire,
 		val:    val,
 	})
@@ -239,7 +246,7 @@ func (g *gache[V]) Set(key string, val V) {
 // Delete deletes value from Gache using key
 func (g *gache[V]) Delete(key string) (loaded bool) {
 	atomic.AddUint64(&g.l, ^uint64(0))
-	return g.shards[xxh3.HashString(key)&mask].Del(key)
+	return g.shards[getShardID(key)].Del(key)
 }
 
 func (g *gache[V]) expiration(key string) {
