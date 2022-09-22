@@ -7,12 +7,12 @@ all: clean install lint test bench
 clean:
 	go clean ./...
 	go clean -modcache
-	rm -rf ./*.log
-	rm -rf ./*.svg
-	rm -rf ./go.*
-	rm -rf pprof
-	rm -rf bench
-	rm -rf vendor
+	rm -rf ./*.log \
+	    ./*.svg \
+	    ./go.* \
+	    pprof \
+	    bench \
+	    vendor
 
 bench: clean init
 	sleep 3
