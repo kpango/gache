@@ -16,7 +16,7 @@ clean:
 
 bench: clean init
 	sleep 3
-	go test -count=1 -run=NONE -bench . -benchmem
+	go test -count=1 -timeout=30m -run=NONE -bench . -benchmem
 
 init:
 	GO111MODULE=on go mod init github.com/kpango/gache/v2
@@ -27,7 +27,7 @@ profile: clean init
 	mkdir bench
 	mkdir pprof
 	\
-	go test -count=10 -run=NONE -bench=BenchmarkGacheSetBigDataWithTTL -benchmem -o pprof/gache-test.bin -cpuprofile pprof/cpu-gache.out -memprofile pprof/mem-gache.out
+	go test -count=3 -timeout=30m -run=NONE -bench=BenchmarkGacheSetBigDataWithTTL -benchmem -o pprof/gache-test.bin -cpuprofile pprof/cpu-gache.out -memprofile pprof/mem-gache.out
 	go tool pprof --svg pprof/gache-test.bin pprof/cpu-gache.out > cpu-gache.svg
 	go tool pprof --svg pprof/gache-test.bin pprof/mem-gache.out > mem-gache.svg
 	\

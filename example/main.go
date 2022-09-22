@@ -75,15 +75,14 @@ func main() {
 		return true
 	})
 
+	// instantiage new gache for int64 type as gci
+	gci := gache.New[int64]()
 
-        // instantiage new gache for int64 type as gci
-        gci := gache.New[int64]()
+	gci.Set("sample1", int64(0))
+	gci.Set("sample2", int64(10))
+	gci.Set("sample3", int64(100))
 
-        gci.Set("sample1", int64(0))
-        gci.Set("sample2", int64(10))
-        gci.Set("sample3", int64(100))
-
-        // gache supports range loop processing method and inner function argument is int64 as contract
+	// gache supports range loop processing method and inner function argument is int64 as contract
 	gci.Range(context.Background(), func(k string, v int64, exp int64) bool {
 		glg.Debugf("key:\t%v\nval:\t%d", k, v)
 		return true

@@ -36,8 +36,9 @@ var (
 
 	parallelism = 10000
 
-	bigData    = map[string]string{}
-	bigDataLen = 2 << 12
+	bigData      = map[string]string{}
+	bigDataLen   = 2 << 10
+	bigDataCount = 2 << 16
 
 	smallData = map[string]string{
 		"string": "aaaa",
@@ -48,7 +49,7 @@ var (
 )
 
 func init() {
-	for i := 0; i < bigDataLen; i++ {
+	for i := 0; i < bigDataCount; i++ {
 		bigData[randStr(bigDataLen)] = randStr(bigDataLen)
 	}
 }
@@ -98,7 +99,6 @@ func benchmark(b *testing.B, data map[string]string,
 			}
 		}
 	})
-
 }
 
 func BenchmarkDefaultMapSetSmallDataNoTTL(b *testing.B) {
