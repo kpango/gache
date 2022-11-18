@@ -45,7 +45,7 @@ func main() {
 		return true
 	})
 
-	file, err := os.OpenFile("/tmp/gache-sample.gdb", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0755)
+	file, err := os.OpenFile("/tmp/gache-sample.gdb", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0o755)
 	if err != nil {
 		glg.Error(err)
 		return
@@ -55,7 +55,7 @@ func main() {
 	file.Close()
 
 	gcn := gache.New[any]().SetDefaultExpire(time.Minute)
-	file, err = os.OpenFile("/tmp/gache-sample.gdb", os.O_RDONLY, 0755)
+	file, err = os.OpenFile("/tmp/gache-sample.gdb", os.O_RDONLY, 0o755)
 	if err != nil {
 		glg.Error(err)
 		return

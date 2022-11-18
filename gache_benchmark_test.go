@@ -84,7 +84,8 @@ func randStr(n int) string {
 func benchmark(b *testing.B, data map[string]string,
 	t time.Duration,
 	set func(string, string, time.Duration),
-	get func(string)) {
+	get func(string),
+) {
 	b.Helper()
 	b.SetParallelism(parallelism)
 	b.ReportAllocs()
@@ -107,24 +108,28 @@ func BenchmarkDefaultMapSetSmallDataNoTTL(b *testing.B) {
 		func(k, v string, t time.Duration) { m.Set(k, v) },
 		func(k string) { m.Get(k) })
 }
+
 func BenchmarkDefaultMapSetBigDataNoTTL(b *testing.B) {
 	m := NewDefault()
 	benchmark(b, bigData, NoTTL,
 		func(k, v string, t time.Duration) { m.Set(k, v) },
 		func(k string) { m.Get(k) })
 }
+
 func BenchmarkSyncMapSetSmallDataNoTTL(b *testing.B) {
 	var m sync.Map
 	benchmark(b, smallData, NoTTL,
 		func(k, v string, t time.Duration) { m.Store(k, v) },
 		func(k string) { m.Load(k) })
 }
+
 func BenchmarkSyncMapSetBigDataNoTTL(b *testing.B) {
 	var m sync.Map
 	benchmark(b, bigData, NoTTL,
 		func(k, v string, t time.Duration) { m.Store(k, v) },
 		func(k string) { m.Load(k) })
 }
+
 func BenchmarkGacheSetSmallDataNoTTL(b *testing.B) {
 	g := New[string](
 		WithDefaultExpiration[string](NoTTL),
@@ -133,6 +138,7 @@ func BenchmarkGacheSetSmallDataNoTTL(b *testing.B) {
 		func(k, v string, t time.Duration) { g.Set(k, v) },
 		func(k string) { g.Get(k) })
 }
+
 func BenchmarkGacheSetSmallDataWithTTL(b *testing.B) {
 	g := New[string](
 		WithDefaultExpiration[string](ttl),
@@ -141,6 +147,7 @@ func BenchmarkGacheSetSmallDataWithTTL(b *testing.B) {
 		func(k, v string, t time.Duration) { g.SetWithExpire(k, v, t) },
 		func(k string) { g.Get(k) })
 }
+
 func BenchmarkGacheSetBigDataNoTTL(b *testing.B) {
 	g := New[string](
 		WithDefaultExpiration[string](NoTTL),
@@ -149,6 +156,7 @@ func BenchmarkGacheSetBigDataNoTTL(b *testing.B) {
 		func(k, v string, t time.Duration) { g.Set(k, v) },
 		func(k string) { g.Get(k) })
 }
+
 func BenchmarkGacheSetBigDataWithTTL(b *testing.B) {
 	g := New[string](
 		WithDefaultExpiration[string](ttl),
