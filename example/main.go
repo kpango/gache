@@ -19,7 +19,7 @@ func main() {
 		value3 = struct{}{}
 	)
 
-	gc := gache.New[any]().SetDefaultExpire(time.Second * 10)
+	gc := gache.New[any]().SetDefaultExpire(time.Second*10).StartExpired(context.Background(), time.Hour)
 
 	// store with expire setting
 	gc.SetWithExpire(key1, value1, time.Second*30)
@@ -52,6 +52,7 @@ func main() {
 	}
 	gc.Write(context.Background(), file)
 
+	gc.Stop()
 	file.Close()
 
 	gcn := gache.New[any]().SetDefaultExpire(time.Minute)

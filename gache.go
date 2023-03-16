@@ -63,7 +63,7 @@ type (
 		expFuncEnabled bool
 		expire         int64
 		l              uint64
-		cancel         atomic.Value
+		cancel         atomic.Pointer[context.CancelFunc]
 		expGroup       singleflight.Group
 		expChan        chan string
 		expFunc        func(context.Context, string)
@@ -150,7 +150,7 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 	go func() {
 		tick := time.NewTicker(dur)
 		ctx, cancel := context.WithCancel(ctx)
-		g.cancel.Store(cancel)
+		g.cancel.Store(&cancel)
 		for {
 			select {
 			case <-ctx.Done():
@@ -350,9 +350,8 @@ func (g *gache[V]) Read(r io.Reader) error {
 // Stop kills expire daemon
 func (g *gache[V]) Stop() {
 	if c := g.cancel.Load(); c != nil {
-		if cancel, ok := c.(context.CancelFunc); ok && cancel != nil {
-			cancel()
-		}
+		cancel := *c
+		cancel()
 	}
 }
 

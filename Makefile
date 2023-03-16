@@ -2,6 +2,10 @@ GO_VERSION:=$(shell go version)
 
 .PHONY: all clean bench bench-all profile lint test contributors update install
 
+
+GOPATH := $(eval GOPATH := $(shell go env GOPATH))$(GOPATH)
+GOLINES_MAX_WIDTH     ?= 200
+
 all: clean install lint test bench
 
 clean:
@@ -54,3 +58,9 @@ contributors:
 
 run:
 	go run example/main.go
+
+format:
+	find ./ -type d -name .git -prune -o -type f -regex '.*[^\.pb]\.go' -print | xargs $(GOPATH)/bin/golines -w -m $(GOLINES_MAX_WIDTH)
+	find ./ -type d -name .git -prune -o -type f -regex '.*[^\.pb]\.go' -print | xargs $(GOPATH)/bin/gofumpt -w
+	find ./ -type d -name .git -prune -o -type f -regex '.*[^\.pb]\.go' -print | xargs $(GOPATH)/bin/strictgoimports -w
+	find ./ -type d -name .git -prune -o -type f -regex '.*\.go' -print | xargs $(GOPATH)/bin/goimports -w
