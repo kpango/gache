@@ -329,7 +329,6 @@ func (g *gache[V]) Write(ctx context.Context, w io.Writer) error {
 		return true
 	})
 	gob.Register(map[string]V{})
-
 	return gob.NewEncoder(w).Encode(&m)
 }
 
