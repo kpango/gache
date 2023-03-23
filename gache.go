@@ -10,10 +10,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/cornelk/hashmap"
 	"github.com/kpango/fastime"
 	"github.com/zeebo/xxh3"
-	"golang.org/x/sync/singleflight"
 )
 
 type (
@@ -64,10 +62,9 @@ type (
 		expire         int64
 		l              uint64
 		cancel         atomic.Pointer[context.CancelFunc]
-		expGroup       singleflight.Group
 		expChan        chan string
 		expFunc        func(context.Context, string)
-		shards         [slen]*hashmap.Map[string, value[V]]
+		shards         [slen]*Map[string, *value[V]]
 	}
 
 	value[V any] struct {
@@ -101,15 +98,11 @@ func New[V any](opts ...Option[V]) Gache[V] {
 	return g
 }
 
-func newMap[V any]() (m *hashmap.Map[string, value[V]]) {
-	m = hashmap.New[string, value[V]]()
-	m.SetHasher(func(k string) uintptr {
-		return uintptr(xxh3.HashString(k))
-	})
-	return m
+func newMap[V any]() (m *Map[string, *value[V]]) {
+	return new(Map[string, *value[V]])
 }
 
-func getShardID(key string) uint64 {
+func getShardID(key string) (id uint64) {
 	if len(key) > 128 {
 		return xxh3.HashString(key[:128]) & mask
 	}
@@ -117,7 +110,7 @@ func getShardID(key string) uint64 {
 }
 
 // isValid checks expiration of value
-func (v *value[V]) isValid() bool {
+func (v *value[V]) isValid() (valid bool) {
 	return v.expire <= 0 || fastime.UnixNanoNow() <= v.expire
 }
 
@@ -170,8 +163,13 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 // ToMap returns All Cache Key-Value sync.Map
 func (g *gache[V]) ToMap(ctx context.Context) *sync.Map {
 	m := new(sync.Map)
-	g.Range(ctx, func(key string, val V, exp int64) bool {
-		go m.Store(key, val)
+	var wg sync.WaitGroup
+	g.Range(ctx, func(key string, val V, exp int64) (ok bool) {
+		wg.Add(1)
+		go func() {
+			m.Store(key, val)
+			wg.Done()
+		}()
 		return true
 	})
 
@@ -182,7 +180,7 @@ func (g *gache[V]) ToMap(ctx context.Context) *sync.Map {
 func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 	m := make(map[string]V, g.Len())
 	mu := new(sync.Mutex)
-	g.Range(ctx, func(key string, val V, exp int64) bool {
+	g.Range(ctx, func(key string, val V, exp int64) (ok bool) {
 		mu.Lock()
 		m[key] = val
 		mu.Unlock()
@@ -192,30 +190,29 @@ func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 }
 
 // get returns value & exists from key
-func (g *gache[V]) get(key string) (V, int64, bool) {
-	var val V
-	v, ok := g.shards[getShardID(key)].Get(key)
+func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
+	var val *value[V]
+	val, ok = g.shards[getShardID(key)].Load(key)
 	if !ok {
-		return val, 0, false
+		return v, 0, false
 	}
 
-	if v.isValid() {
-		val = v.val
-		return val, v.expire, true
+	if val.isValid() {
+		return val.val, val.expire, true
 	}
 
 	g.expiration(key)
-	return val, v.expire, false
+	return v, val.expire, false
 }
 
 // Get returns value & exists from key
-func (g *gache[V]) Get(key string) (V, bool) {
-	v, _, ok := g.get(key)
+func (g *gache[V]) Get(key string) (v V, ok bool) {
+	v, _, ok = g.get(key)
 	return v, ok
 }
 
 // GetWithExpire returns value & expire & exists from key
-func (g *gache[V]) GetWithExpire(key string) (V, int64, bool) {
+func (g *gache[V]) GetWithExpire(key string) (v V, expire int64, ok bool) {
 	return g.get(key)
 }
 
@@ -224,11 +221,13 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	if expire > 0 {
 		expire = fastime.UnixNanoNow() + expire
 	}
-	atomic.AddUint64(&g.l, 1)
-	g.shards[getShardID(key)].Set(key, value[V]{
+	_, loaded := g.shards[getShardID(key)].Swap(key, &value[V]{
 		expire: expire,
 		val:    val,
 	})
+	if !loaded {
+		atomic.AddUint64(&g.l, 1)
+	}
 }
 
 // SetWithExpire sets key-value & expiration to Gache
@@ -243,41 +242,39 @@ func (g *gache[V]) Set(key string, val V) {
 
 // Delete deletes value from Gache using key
 func (g *gache[V]) Delete(key string) (loaded bool) {
-	atomic.AddUint64(&g.l, ^uint64(0))
-	return g.shards[getShardID(key)].Del(key)
+	_, loaded = g.shards[getShardID(key)].LoadAndDelete(key)
+	if loaded {
+		atomic.AddUint64(&g.l, ^uint64(0))
+	}
+	return
 }
 
 func (g *gache[V]) expiration(key string) {
-	g.expGroup.Do(key, func() (interface{}, error) {
-		g.Delete(key)
-		if g.expFuncEnabled {
-			g.expChan <- key
-		}
-		return nil, nil
-	})
+	g.Delete(key)
+	if g.expFuncEnabled {
+		g.expChan <- key
+	}
 }
 
 // DeleteExpired deletes expired value from Gache it can be cancel using context
-func (g *gache[V]) DeleteExpired(ctx context.Context) uint64 {
-	wg := new(sync.WaitGroup)
-	var rows uint64
+func (g *gache[V]) DeleteExpired(ctx context.Context) (rows uint64) {
+	var wg sync.WaitGroup
 	for i := range g.shards {
 		wg.Add(1)
 		go func(c context.Context, idx int) {
-			g.shards[idx].Range(func(k string, v value[V]) bool {
-				select {
-				case <-c.Done():
-					return false
-				default:
+			defer wg.Done()
+			select {
+			case <-c.Done():
+				return
+			default:
+				g.shards[idx].Range(func(k string, v *value[V]) (ok bool) {
 					if !v.isValid() {
 						g.expiration(k)
 						atomic.AddUint64(&rows, 1)
-						runtime.Gosched()
 					}
 					return true
-				}
-			})
-			wg.Done()
+				})
+			}
 		}(ctx, i)
 	}
 	wg.Wait()
@@ -290,20 +287,19 @@ func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gac
 	for i := range g.shards {
 		wg.Add(1)
 		go func(c context.Context, idx int) {
-			g.shards[idx].Range(func(k string, v value[V]) bool {
-				select {
-				case <-c.Done():
-					return false
-				default:
+			defer wg.Done()
+			select {
+			case <-c.Done():
+				return
+			default:
+				g.shards[idx].Range(func(k string, v *value[V]) (ok bool) {
 					if v.isValid() {
 						return f(k, v.val, v.expire)
 					}
-					runtime.Gosched()
 					g.expiration(k)
 					return true
-				}
-			})
-			wg.Done()
+				})
+			}
 		}(ctx, i)
 	}
 	wg.Wait()
@@ -318,16 +314,7 @@ func (g *gache[V]) Len() int {
 
 // Write writes all cached data to writer
 func (g *gache[V]) Write(ctx context.Context, w io.Writer) error {
-	mu := new(sync.Mutex)
-	m := make(map[string]V, g.Len())
-
-	g.Range(ctx, func(key string, val V, exp int64) bool {
-		gob.Register(val)
-		mu.Lock()
-		m[key] = val
-		mu.Unlock()
-		return true
-	})
+	m := g.ToRawMap(ctx)
 	gob.Register(map[string]V{})
 	return gob.NewEncoder(w).Encode(&m)
 }
