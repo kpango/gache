@@ -146,7 +146,7 @@ func BenchmarkGacheSetSmallDataNoTTL(b *testing.B) {
 }
 
 func BenchmarkGacheSetSmallDataWithTTL(b *testing.B) {
-	g := New[string](
+	g := New(
 		WithDefaultExpiration[string](ttl),
 	)
 	benchmark(b, smallData, ttl,
@@ -155,7 +155,7 @@ func BenchmarkGacheSetSmallDataWithTTL(b *testing.B) {
 }
 
 func BenchmarkGacheSetBigDataNoTTL(b *testing.B) {
-	g := New[string](
+	g := New(
 		WithDefaultExpiration[string](NoTTL),
 	)
 	benchmark(b, bigData, NoTTL,
@@ -164,7 +164,7 @@ func BenchmarkGacheSetBigDataNoTTL(b *testing.B) {
 }
 
 func BenchmarkGacheSetBigDataWithTTL(b *testing.B) {
-	g := New[string](
+	g := New(
 		WithDefaultExpiration[string](ttl),
 	)
 	benchmark(b, bigData, ttl,

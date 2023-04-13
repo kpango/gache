@@ -3,26 +3,27 @@ package gache
 import (
 	"sync"
 	"sync/atomic"
+	"unsafe"
 )
 
-type Map[K, V comparable] struct {
+type Map[K comparable, V any] struct {
 	mu     sync.Mutex
 	read   atomic.Pointer[readOnly[K, V]]
 	dirty  map[K]*entry[V]
 	misses int
 }
 
-type readOnly[K, V comparable] struct {
+type readOnly[K comparable, V any] struct {
 	m       map[K]*entry[V]
 	amended bool
 }
 
-type entry[V comparable] struct {
+type entry[V any] struct {
 	expunged atomic.Pointer[V]
 	p        atomic.Pointer[V]
 }
 
-func newEntry[V comparable](v V) (e *entry[V]) {
+func newEntry[V any](v V) (e *entry[V]) {
 	e = &entry[V]{}
 	e.expunged.Store(new(V))
 	e.p.Store(&v)
@@ -46,7 +47,6 @@ func (m *Map[K, V]) Load(key K) (value V, ok bool) {
 		e, ok = read.m[key]
 		if !ok && read.amended {
 			e, ok = m.dirty[key]
-
 			m.missLocked()
 		}
 		m.mu.Unlock()
@@ -71,7 +71,7 @@ func (m *Map[K, V]) Store(key K, value V) {
 
 func (e *entry[V]) tryCompareAndSwap(old, new V) (ok bool) {
 	p := e.p.Load()
-	if p == nil || p == e.expunged.Load() || *p != old {
+	if p == nil || p == e.expunged.Load() || unsafe.Pointer(p) != unsafe.Pointer(&old) {
 		return false
 	}
 
@@ -81,7 +81,7 @@ func (e *entry[V]) tryCompareAndSwap(old, new V) (ok bool) {
 			return true
 		}
 		p = e.p.Load()
-		if p == nil || p == e.expunged.Load() || *p != old {
+		if p == nil || p == e.expunged.Load() || unsafe.Pointer(p) != unsafe.Pointer(&old) {
 			return false
 		}
 	}
@@ -116,7 +116,6 @@ func (m *Map[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
 		m.missLocked()
 	} else {
 		if !read.amended {
-
 			m.dirtyLocked()
 			m.read.Store(&readOnly[K, V]{m: read.m, amended: true})
 		}
@@ -253,7 +252,6 @@ func (m *Map[K, V]) CompareAndSwap(key K, old, new V) (swapped bool) {
 		swapped = e.tryCompareAndSwap(old, new)
 	} else if e, ok := m.dirty[key]; ok {
 		swapped = e.tryCompareAndSwap(old, new)
-
 		m.missLocked()
 	}
 	return swapped
@@ -268,14 +266,13 @@ func (m *Map[K, V]) CompareAndDelete(key K, old V) (deleted bool) {
 		e, ok = read.m[key]
 		if !ok && read.amended {
 			e, ok = m.dirty[key]
-
 			m.missLocked()
 		}
 		m.mu.Unlock()
 	}
 	for ok {
 		p := e.p.Load()
-		if p == nil || p == e.expunged.Load() || *p != old {
+		if p == nil || p == e.expunged.Load() || unsafe.Pointer(p) != unsafe.Pointer(&old) {
 			return false
 		}
 		if e.p.CompareAndSwap(p, nil) {
@@ -286,7 +283,6 @@ func (m *Map[K, V]) CompareAndDelete(key K, old V) (deleted bool) {
 }
 
 func (m *Map[K, V]) Range(f func(key K, value V) bool) {
-
 	read := m.loadReadOnly()
 	if read.amended {
 
