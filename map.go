@@ -285,7 +285,6 @@ func (m *Map[K, V]) CompareAndDelete(key K, old V) (deleted bool) {
 func (m *Map[K, V]) Range(f func(key K, value V) bool) {
 	read := m.loadReadOnly()
 	if read.amended {
-
 		m.mu.Lock()
 		read = m.loadReadOnly()
 		if read.amended {
@@ -306,6 +305,23 @@ func (m *Map[K, V]) Range(f func(key K, value V) bool) {
 			break
 		}
 	}
+}
+
+func (m *Map[K, V]) Len() int {
+	read := m.loadReadOnly()
+	if read.amended {
+		m.mu.Lock()
+		read = m.loadReadOnly()
+		if read.amended {
+			read = readOnly[K, V]{m: m.dirty}
+			m.read.Store(&read)
+			m.dirty = nil
+			m.misses = 0
+		}
+		m.mu.Unlock()
+	}
+
+	return len(read.m)
 }
 
 func (m *Map[K, V]) missLocked() {
