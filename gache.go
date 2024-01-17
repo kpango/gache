@@ -32,6 +32,7 @@ type (
 		SetWithExpire(string, V, time.Duration)
 		StartExpired(context.Context, time.Duration) Gache[V]
 		Len() int
+		Size() uintptr
 		ToMap(context.Context) *sync.Map
 		ToRawMap(context.Context) map[string]V
 		Write(context.Context, io.Writer) error
@@ -58,18 +59,18 @@ type (
 
 	// gache is base instance type
 	gache[V any] struct {
-		expFuncEnabled bool
-		expire         int64
-		l              uint64
+		shards         [slen]*Map[string, *value[V]]
 		cancel         atomic.Pointer[context.CancelFunc]
 		expChan        chan string
 		expFunc        func(context.Context, string)
-		shards         [slen]*Map[string, *value[V]]
+		expFuncEnabled bool
+		expire         int64
+		l              uint64
 	}
 
 	value[V any] struct {
-		expire int64
 		val    V
+		expire int64
 	}
 )
 
@@ -83,6 +84,8 @@ const (
 
 	// NoTTL can be use for disabling ttl cache expiration
 	NoTTL time.Duration = -1
+
+	maxHashKeyLength = 256
 )
 
 // New returns Gache (*gache) instance
@@ -103,8 +106,8 @@ func newMap[V any]() (m *Map[string, *value[V]]) {
 }
 
 func getShardID(key string) (id uint64) {
-	if len(key) > 128 {
-		return xxh3.HashString(key[:128]) & mask
+	if len(key) > maxHashKeyLength {
+		return xxh3.HashString(key[:maxHashKeyLength]) & mask
 	}
 	return xxh3.HashString(key) & mask
 }
@@ -142,7 +145,8 @@ func (g *gache[V]) SetExpiredHook(f func(context.Context, string)) Gache[V] {
 func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V] {
 	go func() {
 		tick := time.NewTicker(dur)
-		ctx, cancel := context.WithCancel(ctx)
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
 		g.cancel.Store(&cancel)
 		for {
 			select {
@@ -193,7 +197,8 @@ func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 // get returns value & exists from key
 func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
 	var val *value[V]
-	val, ok = g.shards[getShardID(key)].Load(key)
+	shard := g.shards[getShardID(key)]
+	val, ok = shard.Load(key)
 	if !ok {
 		return v, 0, false
 	}
@@ -222,7 +227,8 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	if expire > 0 {
 		expire = fastime.UnixNanoNow() + expire
 	}
-	_, loaded := g.shards[getShardID(key)].Swap(key, &value[V]{
+	shard := g.shards[getShardID(key)]
+	_, loaded := shard.Swap(key, &value[V]{
 		expire: expire,
 		val:    val,
 	})
@@ -313,6 +319,19 @@ func (g *gache[V]) Len() int {
 	return *(*int)(unsafe.Pointer(&l))
 }
 
+func (g *gache[V]) Size() (size uintptr) {
+	size += unsafe.Sizeof(g.expFuncEnabled) // bool
+	size += unsafe.Sizeof(g.expire)         // int64
+	size += unsafe.Sizeof(g.l)              // uint64
+	size += unsafe.Sizeof(g.cancel)         // atomic.Pointer[context.CancelFunc]
+	size += unsafe.Sizeof(g.expChan)        // chan string
+	size += unsafe.Sizeof(g.expFunc)        // func(context.Context, string)
+	for _, shard := range g.shards {
+		size += shard.Size()
+	}
+	return size
+}
+
 // Write writes all cached data to writer
 func (g *gache[V]) Write(ctx context.Context, w io.Writer) error {
 	m := g.ToRawMap(ctx)
@@ -329,7 +348,7 @@ func (g *gache[V]) Read(r io.Reader) error {
 		return err
 	}
 	for k, v := range m {
-		g.Set(k, v)
+		go g.Set(k, v)
 	}
 	return nil
 }
@@ -347,4 +366,13 @@ func (g *gache[V]) Clear() {
 	for i := range g.shards {
 		g.shards[i] = newMap[V]()
 	}
+}
+
+func (v *value[V]) Size() uintptr {
+	var size uintptr
+
+	size += unsafe.Sizeof(v.expire) // int64
+	size += unsafe.Sizeof(v.val)    // V size
+
+	return size
 }
