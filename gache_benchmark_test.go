@@ -136,6 +136,20 @@ func BenchmarkSyncMapSetBigDataNoTTL(b *testing.B) {
 		func(k string) { m.Load(k) })
 }
 
+func BenchmarkTrieSetSmallDataNoTTL(b *testing.B) {
+	m := NewTrie[string](16)
+	benchmark(b, smallData, NoTTL,
+		func(k, v string, t time.Duration) { m.Insert(k, &v) },
+		func(k string) { m.Get(k) })
+}
+
+func BenchmarkTrieSetBigDataNoTTL(b *testing.B) {
+	m := NewTrie[string](32)
+	benchmark(b, bigData, NoTTL,
+		func(k, v string, t time.Duration) { m.Insert(k, &v) },
+		func(k string) { m.Get(k) })
+}
+
 func BenchmarkGacheSetSmallDataNoTTL(b *testing.B) {
 	g := New[string](
 		WithDefaultExpiration[string](NoTTL),
