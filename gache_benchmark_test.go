@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 	"unsafe"
+
+	"github.com/dolthub/swiss"
 )
 
 type DefaultMap struct {
@@ -135,6 +137,48 @@ func BenchmarkSyncMapSetBigDataNoTTL(b *testing.B) {
 		func(k, v string, t time.Duration) { m.Store(k, v) },
 		func(k string) { m.Load(k) })
 }
+
+func BenchmarkGacheMapSetSmallDataNoTTL(b *testing.B) {
+	var m Map[string, string]
+	benchmark(b, smallData, NoTTL,
+		func(k, v string, t time.Duration) { m.Store(k, v) },
+		func(k string) { m.Load(k) })
+}
+
+func BenchmarkGacheMapSetBigDataNoTTL(b *testing.B) {
+	var m Map[string, string]
+	benchmark(b, bigData, NoTTL,
+		func(k, v string, t time.Duration) { m.Store(k, v) },
+		func(k string) { m.Load(k) })
+}
+
+func BenchmarkTrieSetSmallDataNoTTL(b *testing.B) {
+	m := NewTrie[string](16)
+	benchmark(b, smallData, NoTTL,
+		func(k, v string, t time.Duration) { m.Insert(k, &v) },
+		func(k string) { m.Get(k) })
+}
+
+func BenchmarkTrieSetBigDataNoTTL(b *testing.B) {
+	m := NewTrie[string](32)
+	benchmark(b, bigData, NoTTL,
+		func(k, v string, t time.Duration) { m.Insert(k, &v) },
+		func(k string) { m.Get(k) })
+}
+
+func BenchmarkSwissSetSmallDataNoTTL(b *testing.B) {
+	m := swiss.NewMap[string, string](16)
+	benchmark(b, smallData, NoTTL,
+		func(k, v string, t time.Duration) { m.Put(k, v) },
+		func(k string) { m.Get(k) })
+}
+
+// func BenchmarkSwissSetBigDataNoTTL(b *testing.B) {
+// 	m := swiss.NewMap[string, string](128)
+// 	benchmark(b, bigData, NoTTL,
+// 		func(k, v string, t time.Duration) { m.Put(k, v) },
+// 		func(k string) { m.Get(k) })
+// }
 
 func BenchmarkGacheSetSmallDataNoTTL(b *testing.B) {
 	g := New[string](
