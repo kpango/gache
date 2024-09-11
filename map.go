@@ -32,10 +32,11 @@ package gache
 import (
 	"sync"
 	"sync/atomic"
+	"unsafe"
 )
 
 type Map[K, V comparable] struct {
-	mu     sync.Mutex
+	mu     sync.RWMutex
 	read   atomic.Pointer[readOnly[K, V]]
 	dirty  map[K]*entry[V]
 	misses int
@@ -383,4 +384,49 @@ func (e *entry[V]) tryExpungeLocked() (isExpunged bool) {
 		p = e.p.Load()
 	}
 	return p == e.expunged.Load()
+}
+
+func (m *Map[K, V]) Size() (size uintptr) {
+	if m == nil {
+		return 0
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	size = unsafe.Sizeof(m.mu)      // sync.RWMutex
+	size += unsafe.Sizeof(m.read)   // atomic.Pointer[readOnly[K, V]]
+	size += unsafe.Sizeof(m.misses) // int
+
+	if ro := m.read.Load(); ro != nil {
+		size += ro.Size() // readOnly size (amended bool, m map[K]*entry[V])
+	}
+	size += mapSize(m.dirty) // map[K]*entry[V]
+	for _, e := range m.dirty {
+		size += e.Size() // entry size (expunged atomic.Pointer[V], p atomic.Pointer[V])
+	}
+	return size
+}
+
+func (e *entry[V]) Size() (size uintptr) {
+	if e == nil {
+		return 0
+	}
+	size = unsafe.Sizeof(e.expunged) // atomic.Pointer[V]
+	size += unsafe.Sizeof(e.p)       // atomic.Pointer[V]
+
+	if ee := e.expunged.Load(); ee != nil {
+		size += unsafe.Sizeof(*ee) // V
+	}
+	if ep := e.p.Load(); ep != nil {
+		size += unsafe.Sizeof(*ep) // V
+	}
+	return size
+}
+
+func (r readOnly[K, V]) Size() (size uintptr) {
+	size = unsafe.Sizeof(r.amended) // bool
+	size += mapSize(r.m)            // map[K]*entry[V]
+	for _, e := range r.m {
+		size += e.Size() // entry[V] size
+	}
+	return size
 }
