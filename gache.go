@@ -143,11 +143,11 @@ func (g *gache[V]) SetExpiredHook(f func(context.Context, string)) Gache[V] {
 
 // StartExpired starts delete expired value daemon
 func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V] {
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithCancel(ctx)
+	g.cancel.Store(&cancel)
 	go func() {
 		tick := time.NewTicker(dur)
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithCancel(ctx)
-		g.cancel.Store(&cancel)
 		for {
 			select {
 			case <-ctx.Done():
@@ -156,6 +156,14 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 			case <-tick.C:
 				g.DeleteExpired(ctx)
 				runtime.Gosched()
+			}
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
 			case key := <-g.expChan:
 				go g.expFunc(ctx, key)
 			}
