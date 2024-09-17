@@ -147,9 +147,21 @@ func main() {
 	})
 
 	runtime.GC()
+	gch := gache.New[int64]().EnableExpiredHook().
+		SetExpiredHook(func(ctx context.Context, key string) {
+			glg.Debugf("key=%v expired", key)
+		}).
+		StartExpired(context.Background(), time.Second*10)
+	for i := 0; i < 10000; i++ {
+		gch.SetWithExpire("sample-"+strconv.Itoa(i), int64(i), time.Second*5)
+	}
+	time.Sleep(time.Second * 20)
+	glg.Debugf("length: %d", gch.Len())
+
+	runtime.GC()
 	gcs := gache.New[string]()
 	maxCnt := 10000000
-	digitLen :=  len(strconv.Itoa(maxCnt))
+	digitLen := len(strconv.Itoa(maxCnt))
 	for i := 0; i < maxCnt; i++ {
 		if i%1000 == 0 {
 			// runtime.ReadMemStats(&m)
