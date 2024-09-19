@@ -10,10 +10,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/kpango/gache)](https://goreportcard.com/report/github.com/kpango/gache)
 [![Go Reference](https://pkg.go.dev/badge/github.com/kpango/gache/v2.svg)](https://pkg.go.dev/github.com/kpango/gache/v2)
 [![Join the chat at https://gitter.im/kpango/gache](https://badges.gitter.im/kpango/gache.svg)](https://gitter.im/kpango/gache?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-[![DepShield Badge](https://depshield.sonatype.org/badges/kpango/gache/depshield.svg)](https://depshield.github.io)
 [![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Fkpango%2Fgache.svg?type=shield)](https://app.fossa.io/projects/git%2Bgithub.com%2Fkpango%2Fgache?ref=badge_shield)
-[![Total visitor](https://visitor-count-badge.herokuapp.com/total.svg?repo_id=gache)](https://github.com/kpango/gache/graphs/traffic)
-[![Visitors in today](https://visitor-count-badge.herokuapp.com/today.svg?repo_id=gache)](https://github.com/kpango/gache/graphs/traffic)
 
 gache is thinnest cache library for go application
 
