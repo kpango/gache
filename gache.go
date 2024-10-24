@@ -18,7 +18,7 @@ type (
 	// Gache is base interface type
 	Gache[V any] interface {
 		Clear()
-		Delete(string) bool
+		Delete(string) (bool, V)
 		DeleteExpired(context.Context) uint64
 		DisableExpiredHook() Gache[V]
 		EnableExpiredHook() Gache[V]
@@ -29,6 +29,7 @@ type (
 		Set(string, V)
 		SetDefaultExpire(time.Duration) Gache[V]
 		SetExpiredHook(f func(context.Context, string)) Gache[V]
+		SetExpiredHookWithValue(f func(context.Context, string, V)) Gache[V]
 		SetWithExpire(string, V, time.Duration)
 		StartExpired(context.Context, time.Duration) Gache[V]
 		Len() int
@@ -59,18 +60,24 @@ type (
 
 	// gache is base instance type
 	gache[V any] struct {
-		shards         [slen]*Map[string, *value[V]]
-		cancel         atomic.Pointer[context.CancelFunc]
-		expChan        chan string
-		expFunc        func(context.Context, string)
-		expFuncEnabled bool
-		expire         int64
-		l              uint64
+		shards           [slen]*Map[string, *value[V]]
+		cancel           atomic.Pointer[context.CancelFunc]
+		expChan          chan keyValue[V]
+		expFunc          func(context.Context, string)
+		expFuncWithValue func(context.Context, string, V)
+		expFuncEnabled   bool
+		expire           int64
+		l                uint64
 	}
 
 	value[V any] struct {
 		val    V
 		expire int64
+	}
+
+	keyValue[V any] struct {
+		key   string
+		value V
 	}
 )
 
@@ -97,7 +104,7 @@ func New[V any](opts ...Option[V]) Gache[V] {
 		opt(g)
 	}
 	g.Clear()
-	g.expChan = make(chan string, len(g.shards)*10)
+	g.expChan = make(chan keyValue[V], len(g.shards)*10)
 	return g
 }
 
@@ -141,6 +148,12 @@ func (g *gache[V]) SetExpiredHook(f func(context.Context, string)) Gache[V] {
 	return g
 }
 
+// SetExpiredHookWithValue set expire hooked function
+func (g *gache[V]) SetExpiredHookWithValue(f func(context.Context, string, V)) Gache[V] {
+	g.expFuncWithValue = f
+	return g
+}
+
 // StartExpired starts delete expired value daemon
 func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V] {
 	go func() {
@@ -153,8 +166,13 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 			case <-ctx.Done():
 				tick.Stop()
 				return
-			case key := <-g.expChan:
-				go g.expFunc(ctx, key)
+			case keyValue := <-g.expChan:
+				if g.expFunc != nil {
+					go g.expFunc(ctx, keyValue.key)
+				}
+				if g.expFuncWithValue != nil {
+					go g.expFuncWithValue(ctx, keyValue.key, keyValue.value)
+				}
 			case <-tick.C:
 				go func() {
 					g.DeleteExpired(ctx)
@@ -250,18 +268,20 @@ func (g *gache[V]) Set(key string, val V) {
 }
 
 // Delete deletes value from Gache using key
-func (g *gache[V]) Delete(key string) (loaded bool) {
-	_, loaded = g.shards[getShardID(key)].LoadAndDelete(key)
+func (g *gache[V]) Delete(key string) (loaded bool, v V) {
+	var val *value[V]
+	val, loaded = g.shards[getShardID(key)].LoadAndDelete(key)
 	if loaded {
 		atomic.AddUint64(&g.l, ^uint64(0))
 	}
-	return
+	return loaded, val.val
 }
 
 func (g *gache[V]) expiration(key string) {
-	g.Delete(key)
+	_, v := g.Delete(key)
+
 	if g.expFuncEnabled {
-		g.expChan <- key
+		g.expChan <- keyValue[V]{key: key, value: v}
 	}
 }
 
@@ -322,12 +342,13 @@ func (g *gache[V]) Len() int {
 }
 
 func (g *gache[V]) Size() (size uintptr) {
-	size += unsafe.Sizeof(g.expFuncEnabled) // bool
-	size += unsafe.Sizeof(g.expire)         // int64
-	size += unsafe.Sizeof(g.l)              // uint64
-	size += unsafe.Sizeof(g.cancel)         // atomic.Pointer[context.CancelFunc]
-	size += unsafe.Sizeof(g.expChan)        // chan string
-	size += unsafe.Sizeof(g.expFunc)        // func(context.Context, string)
+	size += unsafe.Sizeof(g.expFuncEnabled)   // bool
+	size += unsafe.Sizeof(g.expire)           // int64
+	size += unsafe.Sizeof(g.l)                // uint64
+	size += unsafe.Sizeof(g.cancel)           // atomic.Pointer[context.CancelFunc]
+	size += unsafe.Sizeof(g.expChan)          // chan keyValue[V]
+	size += unsafe.Sizeof(g.expFunc)          // func(context.Context, string)
+	size += unsafe.Sizeof(g.expFuncWithValue) // func(context.Context, string, V)
 	for _, shard := range g.shards {
 		size += shard.Size()
 	}

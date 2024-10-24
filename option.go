@@ -38,3 +38,13 @@ func WithExpiredHookFunc[V any](f func(ctx context.Context, key string)) Option[
 		return nil
 	}
 }
+
+func WithExpiredHookFuncWithValue[V any](f func(ctx context.Context, key string, v V)) Option[V] {
+	return func(g *gache[V]) error {
+		if f != nil {
+			g.expFuncWithValue = f
+			g.expFuncEnabled = true
+		}
+		return nil
+	}
+}
