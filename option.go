@@ -29,7 +29,7 @@ func WithDefaultExpiration[V any](dur time.Duration) Option[V] {
 	}
 }
 
-func WithExpiredHookFunc[V any](f func(ctx context.Context, key string)) Option[V] {
+func WithExpiredHookFunc[V any](f func(ctx context.Context, key string, v V)) Option[V] {
 	return func(g *gache[V]) error {
 		if f != nil {
 			g.expFunc = f

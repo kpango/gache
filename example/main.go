@@ -148,8 +148,8 @@ func main() {
 
 	runtime.GC()
 	gch := gache.New[int64]().EnableExpiredHook().
-		SetExpiredHook(func(ctx context.Context, key string) {
-			glg.Debugf("key=%v expired", key)
+		SetExpiredHook(func(ctx context.Context, key string, v int64) {
+			glg.Debugf("key=%v value=%d expired", key, v)
 		}).
 		StartExpired(context.Background(), time.Second*10)
 	for i := 0; i < 10000; i++ {
