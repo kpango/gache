@@ -261,7 +261,10 @@ func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 	if loaded {
 		atomic.AddUint64(&g.l, ^uint64(0))
 	}
-	return val.val, loaded
+	if val != nil && loaded {
+		return val.val, loaded
+	}
+	return v, loaded
 }
 
 func (g *gache[V]) expiration(key string) {
