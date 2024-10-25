@@ -28,8 +28,7 @@ type (
 		Read(io.Reader) error
 		Set(string, V)
 		SetDefaultExpire(time.Duration) Gache[V]
-		SetExpiredHook(f func(context.Context, string)) Gache[V]
-		SetExpiredHookWithValue(f func(context.Context, string, V)) Gache[V]
+		SetExpiredHook(f func(context.Context, string, V)) Gache[V]
 		SetWithExpire(string, V, time.Duration)
 		StartExpired(context.Context, time.Duration) Gache[V]
 		Len() int
@@ -60,14 +59,13 @@ type (
 
 	// gache is base instance type
 	gache[V any] struct {
-		shards           [slen]*Map[string, *value[V]]
-		cancel           atomic.Pointer[context.CancelFunc]
-		expChan          chan keyValue[V]
-		expFunc          func(context.Context, string)
-		expFuncWithValue func(context.Context, string, V)
-		expFuncEnabled   bool
-		expire           int64
-		l                uint64
+		shards         [slen]*Map[string, *value[V]]
+		cancel         atomic.Pointer[context.CancelFunc]
+		expChan        chan keyValue[V]
+		expFunc        func(context.Context, string, V)
+		expFuncEnabled bool
+		expire         int64
+		l              uint64
 	}
 
 	value[V any] struct {
@@ -143,14 +141,8 @@ func (g *gache[V]) DisableExpiredHook() Gache[V] {
 }
 
 // SetExpiredHook set expire hooked function
-func (g *gache[V]) SetExpiredHook(f func(context.Context, string)) Gache[V] {
+func (g *gache[V]) SetExpiredHook(f func(context.Context, string, V)) Gache[V] {
 	g.expFunc = f
-	return g
-}
-
-// SetExpiredHookWithValue set expire hooked function
-func (g *gache[V]) SetExpiredHookWithValue(f func(context.Context, string, V)) Gache[V] {
-	g.expFuncWithValue = f
 	return g
 }
 
@@ -167,12 +159,7 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 				tick.Stop()
 				return
 			case keyValue := <-g.expChan:
-				if g.expFunc != nil {
-					go g.expFunc(ctx, keyValue.key)
-				}
-				if g.expFuncWithValue != nil {
-					go g.expFuncWithValue(ctx, keyValue.key, keyValue.value)
-				}
+				go g.expFunc(ctx, keyValue.key, keyValue.value)
 			case <-tick.C:
 				go func() {
 					g.DeleteExpired(ctx)
@@ -278,10 +265,11 @@ func (g *gache[V]) Delete(key string) (loaded bool, v V) {
 }
 
 func (g *gache[V]) expiration(key string) {
-	_, v := g.Delete(key)
+	loaded, v := g.Delete(key)
 
-	if g.expFuncEnabled {
+	if loaded && g.expFuncEnabled {
 		g.expChan <- keyValue[V]{key: key, value: v}
+
 	}
 }
 
@@ -342,13 +330,12 @@ func (g *gache[V]) Len() int {
 }
 
 func (g *gache[V]) Size() (size uintptr) {
-	size += unsafe.Sizeof(g.expFuncEnabled)   // bool
-	size += unsafe.Sizeof(g.expire)           // int64
-	size += unsafe.Sizeof(g.l)                // uint64
-	size += unsafe.Sizeof(g.cancel)           // atomic.Pointer[context.CancelFunc]
-	size += unsafe.Sizeof(g.expChan)          // chan keyValue[V]
-	size += unsafe.Sizeof(g.expFunc)          // func(context.Context, string)
-	size += unsafe.Sizeof(g.expFuncWithValue) // func(context.Context, string, V)
+	size += unsafe.Sizeof(g.expFuncEnabled) // bool
+	size += unsafe.Sizeof(g.expire)         // int64
+	size += unsafe.Sizeof(g.l)              // uint64
+	size += unsafe.Sizeof(g.cancel)         // atomic.Pointer[context.CancelFunc]
+	size += unsafe.Sizeof(g.expChan)        // chan keyValue[V]
+	size += unsafe.Sizeof(g.expFunc)        // func(context.Context, string, V)
 	for _, shard := range g.shards {
 		size += shard.Size()
 	}
