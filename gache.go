@@ -18,7 +18,7 @@ type (
 	// Gache is base interface type
 	Gache[V any] interface {
 		Clear()
-		Delete(string) (bool, V)
+		Delete(string) (V, bool)
 		DeleteExpired(context.Context) uint64
 		DisableExpiredHook() Gache[V]
 		EnableExpiredHook() Gache[V]
@@ -255,21 +255,20 @@ func (g *gache[V]) Set(key string, val V) {
 }
 
 // Delete deletes value from Gache using key
-func (g *gache[V]) Delete(key string) (loaded bool, v V) {
+func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 	var val *value[V]
 	val, loaded = g.shards[getShardID(key)].LoadAndDelete(key)
 	if loaded {
 		atomic.AddUint64(&g.l, ^uint64(0))
 	}
-	return loaded, val.val
+	return val.val, loaded
 }
 
 func (g *gache[V]) expiration(key string) {
-	loaded, v := g.Delete(key)
+	v, loaded := g.Delete(key)
 
 	if loaded && g.expFuncEnabled {
 		g.expChan <- keyValue[V]{key: key, value: v}
-
 	}
 }
 
