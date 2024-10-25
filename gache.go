@@ -158,8 +158,8 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 			case <-ctx.Done():
 				tick.Stop()
 				return
-			case keyValue := <-g.expChan:
-				go g.expFunc(ctx, keyValue.key, keyValue.value)
+			case kv := <-g.expChan:
+				go g.expFunc(ctx, kv.key, kv.value)
 			case <-tick.C:
 				go func() {
 					g.DeleteExpired(ctx)
