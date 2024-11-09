@@ -97,6 +97,26 @@ func (m *Map[K, V]) Store(key K, value V) {
 	_, _ = m.Swap(key, value)
 }
 
+func (m *Map[K, V]) Clear() {
+	read := m.loadReadOnly()
+	if len(read.m) == 0 && !read.amended {
+		// Avoid allocating a new readOnly when the map is already clear.
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	read = m.loadReadOnly()
+	if len(read.m) > 0 || read.amended {
+		m.read.Store(&readOnly[K, V]{})
+	}
+
+	clear(m.dirty)
+	// Don't immediately promote the newly-cleared dirty map on the next operation.
+	m.misses = 0
+}
+
 func (e *entry[V]) tryCompareAndSwap(old, new V) (ok bool) {
 	p := e.p.Load()
 	if p == nil || p == e.expunged.Load() || *p != old {
@@ -136,6 +156,9 @@ func (m *Map[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
 	read = m.loadReadOnly()
 	if e, ok := read.m[key]; ok {
 		if e.unexpungeLocked() {
+			if m.dirty == nil {
+				m.initDirty(len(read.m))
+			}
 			m.dirty[key] = e
 		}
 		actual, loaded, _ = e.tryLoadOrStore(value)
@@ -146,6 +169,9 @@ func (m *Map[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
 		if !read.amended {
 			m.dirtyLocked()
 			m.read.Store(&readOnly[K, V]{m: read.m, amended: true})
+		}
+		if m.dirty == nil {
+			m.initDirty(len(read.m))
 		}
 		m.dirty[key] = newEntry(value)
 		actual, loaded = value, false
@@ -241,6 +267,9 @@ func (m *Map[K, V]) Swap(key K, value V) (previous V, loaded bool) {
 	read = m.loadReadOnly()
 	if e, ok := read.m[key]; ok {
 		if e.unexpungeLocked() {
+			if m.dirty == nil {
+				m.initDirty(len(read.m))
+			}
 			m.dirty[key] = e
 		}
 		if v := e.swapLocked(&value); v != nil {
@@ -256,6 +285,9 @@ func (m *Map[K, V]) Swap(key K, value V) (previous V, loaded bool) {
 		if !read.amended {
 			m.dirtyLocked()
 			m.read.Store(&readOnly[K, V]{m: read.m, amended: true})
+		}
+		if m.dirty == nil {
+			m.initDirty(len(read.m))
 		}
 		m.dirty[key] = newEntry(value)
 	}
@@ -316,7 +348,8 @@ func (m *Map[K, V]) Range(f func(key K, value V) bool) {
 		read = m.loadReadOnly()
 		if read.amended {
 			read = readOnly[K, V]{m: m.dirty}
-			m.read.Store(&read)
+			copyRead := read
+			m.read.Store(&copyRead)
 			m.dirty = nil
 			m.misses = 0
 		}
@@ -332,23 +365,6 @@ func (m *Map[K, V]) Range(f func(key K, value V) bool) {
 			break
 		}
 	}
-}
-
-func (m *Map[K, V]) Len() int {
-	read := m.loadReadOnly()
-	if read.amended {
-		m.mu.Lock()
-		read = m.loadReadOnly()
-		if read.amended {
-			read = readOnly[K, V]{m: m.dirty}
-			m.read.Store(&read)
-			m.dirty = nil
-			m.misses = 0
-		}
-		m.mu.Unlock()
-	}
-
-	return len(read.m)
 }
 
 func (m *Map[K, V]) missLocked() {
@@ -367,12 +383,16 @@ func (m *Map[K, V]) dirtyLocked() {
 	}
 
 	read := m.loadReadOnly()
-	m.dirty = make(map[K]*entry[V], len(read.m))
+	m.initDirty(len(read.m))
 	for k, e := range read.m {
 		if !e.tryExpungeLocked() {
 			m.dirty[k] = e
 		}
 	}
+}
+
+func (m *Map[K, V]) initDirty(size int) {
+	m.dirty = make(map[K]*entry[V], size)
 }
 
 func (e *entry[V]) tryExpungeLocked() (isExpunged bool) {
@@ -384,6 +404,23 @@ func (e *entry[V]) tryExpungeLocked() (isExpunged bool) {
 		p = e.p.Load()
 	}
 	return p == e.expunged.Load()
+}
+
+func (m *Map[K, V]) Len() int {
+	read := m.loadReadOnly()
+	if read.amended {
+		m.mu.Lock()
+		read = m.loadReadOnly()
+		if read.amended {
+			read = readOnly[K, V]{m: m.dirty}
+			m.read.Store(&read)
+			m.dirty = nil
+			m.misses = 0
+		}
+		m.mu.Unlock()
+	}
+
+	return len(read.m)
 }
 
 func (m *Map[K, V]) Size() (size uintptr) {
