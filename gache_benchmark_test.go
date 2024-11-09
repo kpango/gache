@@ -136,8 +136,22 @@ func BenchmarkSyncMapSetBigDataNoTTL(b *testing.B) {
 		func(k string) { m.Load(k) })
 }
 
+func BenchmarkGacheMapSetSmallDataNoTTL(b *testing.B) {
+	var m Map[string, string]
+	benchmark(b, smallData, NoTTL,
+		func(k, v string, t time.Duration) { m.Store(k, v) },
+		func(k string) { m.Load(k) })
+}
+
+func BenchmarkGacheMapSetBigDataNoTTL(b *testing.B) {
+	var m Map[string, string]
+	benchmark(b, bigData, NoTTL,
+		func(k, v string, t time.Duration) { m.Store(k, v) },
+		func(k string) { m.Load(k) })
+}
+
 func BenchmarkGacheSetSmallDataNoTTL(b *testing.B) {
-	g := New[string](
+	g := New(
 		WithDefaultExpiration[string](NoTTL),
 	)
 	benchmark(b, smallData, NoTTL,
@@ -146,7 +160,7 @@ func BenchmarkGacheSetSmallDataNoTTL(b *testing.B) {
 }
 
 func BenchmarkGacheSetSmallDataWithTTL(b *testing.B) {
-	g := New[string](
+	g := New(
 		WithDefaultExpiration[string](ttl),
 	)
 	benchmark(b, smallData, ttl,
@@ -155,7 +169,7 @@ func BenchmarkGacheSetSmallDataWithTTL(b *testing.B) {
 }
 
 func BenchmarkGacheSetBigDataNoTTL(b *testing.B) {
-	g := New[string](
+	g := New(
 		WithDefaultExpiration[string](NoTTL),
 	)
 	benchmark(b, bigData, NoTTL,
@@ -164,7 +178,7 @@ func BenchmarkGacheSetBigDataNoTTL(b *testing.B) {
 }
 
 func BenchmarkGacheSetBigDataWithTTL(b *testing.B) {
-	g := New[string](
+	g := New(
 		WithDefaultExpiration[string](ttl),
 	)
 	benchmark(b, bigData, ttl,

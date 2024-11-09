@@ -376,15 +376,14 @@ func (g *gache[V]) Stop() {
 // Clear deletes all key and value present in the Gache.
 func (g *gache[V]) Clear() {
 	for i := range g.shards {
-		g.shards[i] = newMap[V]()
+		if g.shards[i] == nil {
+			g.shards[i] = newMap[V]()
+		} else {
+			g.shards[i].Clear()
+		}
 	}
 }
 
-func (v *value[V]) Size() uintptr {
-	var size uintptr
-
-	size += unsafe.Sizeof(v.expire) // int64
-	size += unsafe.Sizeof(v.val)    // V size
-
-	return size
+func (v *value[V]) Size() (size uintptr) {
+	return unsafe.Sizeof(v.expire) + unsafe.Sizeof(v.val)
 }
