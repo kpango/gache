@@ -35,6 +35,7 @@ func (m *DefaultMap) Get(key interface{}) (interface{}, bool) {
 func (m *DefaultMap) Set(key, val interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.data[key] = val
 }
 
 var (
