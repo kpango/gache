@@ -1,6 +1,6 @@
 module github.com/kpango/gache/v2
 
-go 1.23.1
+go 1.23.3
 
 require (
 	github.com/kpango/fastime v1.1.9
