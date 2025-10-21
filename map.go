@@ -90,7 +90,7 @@ func (e *entry[V]) load() (value V, ok bool) {
 	if p == nil || p == e.expunged.Load() {
 		return value, false
 	}
-	return *(*V)(p), true
+	return *p, true
 }
 
 func (m *Map[K, V]) Store(key K, value V) {
