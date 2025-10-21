@@ -25,6 +25,7 @@ bench: clean init
 init:
 	GO111MODULE=on go mod init github.com/kpango/gache/v2
 	GO111MODULE=on go mod tidy
+	go get -u ./...
 
 profile: clean init
 	rm -rf bench
@@ -52,7 +53,8 @@ lint:
 	gometalinter --enable-all . | rg -v comment
 
 test:
-	GO111MODULE=on go test --race -v $(go list ./... | rg -v vendor)
+	CGO_ENABLED=1 GO111MODULE=on GOEXPERIMENT=noswissmap go test --race -v $(go list ./... | rg -v vendor)
+	CGO_ENABLED=1 GO111MODULE=on go test --race -v $(go list ./... | rg -v vendor)
 
 contributors:
 	git log --format='%aN <%aE>' | sort -fu > CONTRIBUTORS

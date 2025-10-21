@@ -60,7 +60,7 @@ func (m *RWMutexMap) Load(key any) (value any, ok bool) {
 	m.mu.RLock()
 	value, ok = m.dirty[key]
 	m.mu.RUnlock()
-	return
+	return value, ok
 }
 
 func (m *RWMutexMap) Store(key, value any) {
@@ -95,7 +95,7 @@ func (m *RWMutexMap) Swap(key, value any) (previous any, loaded bool) {
 	previous, loaded = m.dirty[key]
 	m.dirty[key] = value
 	m.mu.Unlock()
-	return
+	return previous, loaded
 }
 
 func (m *RWMutexMap) LoadAndDelete(key any) (value any, loaded bool) {
@@ -215,7 +215,7 @@ func (m *DeepCopyMap) Swap(key, value any) (previous any, loaded bool) {
 	dirty[key] = value
 	m.clean.Store(dirty)
 	m.mu.Unlock()
-	return
+	return previous, loaded
 }
 
 func (m *DeepCopyMap) LoadAndDelete(key any) (value any, loaded bool) {
@@ -225,7 +225,7 @@ func (m *DeepCopyMap) LoadAndDelete(key any) (value any, loaded bool) {
 	delete(dirty, key)
 	m.clean.Store(dirty)
 	m.mu.Unlock()
-	return
+	return value, loaded
 }
 
 func (m *DeepCopyMap) Delete(key any) {
