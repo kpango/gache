@@ -174,14 +174,8 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 // ToMap returns All Cache Key-Value sync.Map
 func (g *gache[V]) ToMap(ctx context.Context) *sync.Map {
 	m := new(sync.Map)
-	var wg sync.WaitGroup
-	defer wg.Wait()
 	g.Range(ctx, func(key string, val V, exp int64) (ok bool) {
-		wg.Add(1)
-		go func() {
-			m.Store(key, val)
-			wg.Done()
-		}()
+		m.Store(key, val)
 		return true
 	})
 
