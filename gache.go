@@ -191,13 +191,21 @@ func (g *gache[V]) ToMap(ctx context.Context) *sync.Map {
 // ToRawMap returns All Cache Key-Value map
 func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 	m := make(map[string]V, g.Len())
-	mu := new(sync.Mutex)
-	g.Range(ctx, func(key string, val V, exp int64) (ok bool) {
-		mu.Lock()
-		m[key] = val
-		mu.Unlock()
-		return true
-	})
+	for i := range g.shards {
+		select {
+		case <-ctx.Done():
+			return m
+		default:
+			g.shards[i].Range(func(k string, v *value[V]) bool {
+				if v.isValid() {
+					m[k] = v.val
+				} else {
+					g.expiration(k)
+				}
+				return true
+			})
+		}
+	}
 	return m
 }
 
