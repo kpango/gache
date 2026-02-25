@@ -99,10 +99,8 @@ type groupsRef struct {
 //	    slots [8]struct{ key K; elem V }
 //	}
 //
-// SlotSize = sizeof(struct{ key K; elem V }) computed with Go's struct layout
-// rules (i.e. alignUp(keySize, valAlign) + valSize, rounded to slot alignment).
-// Special case: zero-sized values still consume 1 byte so each slot has a
-// unique address; the slot is then rounded up to keyAlign.
+// SlotSize = sizeof(struct{ key K; elem V }) computed by the compiler using
+// Go's struct layout rules.
 func mapSize[K comparable, V any](m map[K]V) uintptr {
 	if m == nil {
 		return 0
@@ -113,31 +111,16 @@ func mapSize[K comparable, V any](m map[K]V) uintptr {
 		return 0
 	}
 
-	var k K
-	var v V
-	keySize, keyAlign := unsafe.Sizeof(k), unsafe.Alignof(k)
-	valSize, valAlign := unsafe.Sizeof(v), unsafe.Alignof(v)
-
-	// Compute SlotSize following Go's struct layout for `struct{ key K; elem V }`.
-	// elemOff = alignUp(keySize, valAlign)
-	// slotSize = alignUp(elemOff+valSize, max(keyAlign, valAlign))
-	//
-	// Special case: zero-sized values still consume 1 byte (unique address),
-	// padded up to keyAlign so slots form a valid array.
-	slotAlign := keyAlign
-	if valAlign > slotAlign {
-		slotAlign = valAlign
+	type slot struct {
+		key  K
+		elem V
 	}
-	slotSize := alignUp(alignUp(keySize, valAlign)+valSize, slotAlign)
-	if valSize == 0 {
-		slotSize = alignUp(keySize+1, keyAlign)
+	type group struct {
+		ctrl  uint64
+		slots [8]slot
 	}
 
-	// GroupSize = sizeof(struct{ ctrl uint64; slots [8]slot }).
-	// ctrl is uint64 (align 8, size 8); slots follow at offset 8 (always, since
-	// slotAlign ≤ 8 on all supported platforms). The group array element size is
-	// rounded up to max(8, slotAlign) = 8.
-	groupSize := alignUp(8+8*slotSize, 8)
+	groupSize := unsafe.Sizeof(group{})
 
 	size := unsafe.Sizeof(*h)
 
