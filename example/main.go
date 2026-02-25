@@ -22,7 +22,7 @@ var (
 )
 
 func init() {
-	for i := 0; i < bigDataCount; i++ {
+	for range bigDataCount {
 		bigData[randStr(bigDataLen)] = randStr(bigDataLen)
 	}
 }
@@ -128,7 +128,7 @@ func main() {
 		return
 	}
 
-	gcn.Range(context.Background(), func(k string, v interface{}, exp int64) bool {
+	gcn.Range(context.Background(), func(k string, v any, exp int64) bool {
 		glg.Warnf("key:\t%v\nval:\t%v", k, v)
 		return true
 	})
@@ -152,7 +152,7 @@ func main() {
 			glg.Debugf("key=%v value=%d expired", key, v)
 		}).
 		StartExpired(context.Background(), time.Second*10)
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		gch.SetWithExpire("sample-"+strconv.Itoa(i), int64(i), time.Second*5)
 	}
 	time.Sleep(time.Second * 20)
@@ -162,7 +162,7 @@ func main() {
 	gcs := gache.New[string]()
 	maxCnt := 10000000
 	digitLen := len(strconv.Itoa(maxCnt))
-	for i := 0; i < maxCnt; i++ {
+	for i := range maxCnt {
 		if i%1000 == 0 {
 			// runtime.ReadMemStats(&m)
 			// mbody, err := json.Marshal(m)

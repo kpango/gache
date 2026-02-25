@@ -67,11 +67,11 @@ func BenchmarkLoadMostlyHits(b *testing.B) {
 
 	benchMap(b, bench{
 		setup: func(_ *testing.B, m mapInterface) {
-			for i := 0; i < hits; i++ {
+			for i := range hits {
 				m.LoadOrStore(i, i)
 			}
 			// Prime the map to get it into a steady state.
-			for i := 0; i < hits*2; i++ {
+			for i := range hits * 2 {
 				m.Load(i % hits)
 			}
 		},
@@ -89,11 +89,11 @@ func BenchmarkLoadMostlyMisses(b *testing.B) {
 
 	benchMap(b, bench{
 		setup: func(_ *testing.B, m mapInterface) {
-			for i := 0; i < hits; i++ {
+			for i := range hits {
 				m.LoadOrStore(i, i)
 			}
 			// Prime the map to get it into a steady state.
-			for i := 0; i < hits*2; i++ {
+			for i := range hits * 2 {
 				m.Load(i % hits)
 			}
 		},
@@ -114,11 +114,11 @@ func BenchmarkLoadOrStoreBalanced(b *testing.B) {
 			if _, ok := m.(*DeepCopyMap); ok {
 				b.Skip("DeepCopyMap has quadratic running time.")
 			}
-			for i := 0; i < hits; i++ {
+			for i := range hits {
 				m.LoadOrStore(i, i)
 			}
 			// Prime the map to get it into a steady state.
-			for i := 0; i < hits*2; i++ {
+			for i := range hits * 2 {
 				m.Load(i % hits)
 			}
 		},
@@ -178,11 +178,11 @@ func BenchmarkLoadAndDeleteBalanced(b *testing.B) {
 			if _, ok := m.(*DeepCopyMap); ok {
 				b.Skip("DeepCopyMap has quadratic running time.")
 			}
-			for i := 0; i < hits; i++ {
+			for i := range hits {
 				m.LoadOrStore(i, i)
 			}
 			// Prime the map to get it into a steady state.
-			for i := 0; i < hits*2; i++ {
+			for i := range hits * 2 {
 				m.Load(i % hits)
 			}
 		},
@@ -237,7 +237,7 @@ func BenchmarkRange(b *testing.B) {
 
 	benchMap(b, bench{
 		setup: func(_ *testing.B, m mapInterface) {
-			for i := 0; i < mapSize; i++ {
+			for i := range mapSize {
 				m.Store(i, i)
 			}
 		},
@@ -281,7 +281,7 @@ func BenchmarkAdversarialDelete(b *testing.B) {
 
 	benchMap(b, bench{
 		setup: func(_ *testing.B, m mapInterface) {
-			for i := 0; i < mapSize; i++ {
+			for i := range mapSize {
 				m.Store(i, i)
 			}
 		},
@@ -335,11 +335,11 @@ func BenchmarkSwapMostlyHits(b *testing.B) {
 
 	benchMap(b, bench{
 		setup: func(_ *testing.B, m mapInterface) {
-			for i := 0; i < hits; i++ {
+			for i := range hits {
 				m.LoadOrStore(i, i)
 			}
 			// Prime the map to get it into a steady state.
-			for i := 0; i < hits*2; i++ {
+			for i := range hits * 2 {
 				m.Load(i % hits)
 			}
 		},
@@ -363,11 +363,11 @@ func BenchmarkSwapMostlyMisses(b *testing.B) {
 
 	benchMap(b, bench{
 		setup: func(_ *testing.B, m mapInterface) {
-			for i := 0; i < hits; i++ {
+			for i := range hits {
 				m.LoadOrStore(i, i)
 			}
 			// Prime the map to get it into a steady state.
-			for i := 0; i < hits*2; i++ {
+			for i := range hits * 2 {
 				m.Load(i % hits)
 			}
 		},
@@ -437,11 +437,11 @@ func BenchmarkCompareAndSwapMostlyHits(b *testing.B) {
 				b.Skip("DeepCopyMap has quadratic running time.")
 			}
 
-			for i := 0; i < hits; i++ {
+			for i := range hits {
 				m.LoadOrStore(i, i)
 			}
 			// Prime the map to get it into a steady state.
-			for i := 0; i < hits*2; i++ {
+			for i := range hits * 2 {
 				m.Load(i % hits)
 			}
 		},
@@ -463,11 +463,11 @@ func BenchmarkCompareAndSwapMostlyMisses(b *testing.B) {
 
 	benchMap(b, bench{
 		setup: func(_ *testing.B, m mapInterface) {
-			for i := 0; i < hits; i++ {
+			for i := range hits {
 				m.LoadOrStore(i, i)
 			}
 			// Prime the map to get it into a steady state.
-			for i := 0; i < hits*2; i++ {
+			for i := range hits * 2 {
 				m.Load(i % hits)
 			}
 		},
@@ -509,11 +509,11 @@ func BenchmarkCompareAndDeleteMostlyHits(b *testing.B) {
 				b.Skip("DeepCopyMap has quadratic running time.")
 			}
 
-			for i := 0; i < hits; i++ {
+			for i := range hits {
 				m.LoadOrStore(i, i)
 			}
 			// Prime the map to get it into a steady state.
-			for i := 0; i < hits*2; i++ {
+			for i := range hits * 2 {
 				m.Load(i % hits)
 			}
 		},
@@ -537,11 +537,11 @@ func BenchmarkCompareAndDeleteMostlyMisses(b *testing.B) {
 
 	benchMap(b, bench{
 		setup: func(_ *testing.B, m mapInterface) {
-			for i := 0; i < hits; i++ {
+			for i := range hits {
 				m.LoadOrStore(i, i)
 			}
 			// Prime the map to get it into a steady state.
-			for i := 0; i < hits*2; i++ {
+			for i := range hits * 2 {
 				m.Load(i % hits)
 			}
 		},
