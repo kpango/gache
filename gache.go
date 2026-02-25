@@ -54,10 +54,13 @@ type (
 		shards         [slen]*Map[string, *value[V]]
 		timer          *timingWheel
 		clock          *Clock
-		cancel         atomic.Pointer[context.CancelFunc]
-		expChan        chan *keyValue[V]
 		kvPool         *sync.Pool
 		expFunc        func(context.Context, string, V)
+
+		// Lifecycle fields protected by lifecycleMu
+		lifecycleMu    sync.Mutex
+		cancel         context.CancelFunc
+
 		expFuncEnabled bool
 		expire         int64
 		l              uint64
@@ -66,6 +69,7 @@ type (
 		// configuration for clock and timing wheel
 		clockInterval time.Duration
 		wheelBits     int
+		expChan        chan *keyValue[V]
 	}
 
 	value[V any] struct {
@@ -182,14 +186,21 @@ func (g *gache[V]) SetExpiredHook(f func(context.Context, string, V)) Gache[V] {
 
 // StartExpired starts delete expired value daemon using Timing Wheel
 func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V] {
+	g.lifecycleMu.Lock()
+	defer g.lifecycleMu.Unlock()
+
+	// If already running, cancel previous context? Or allow multiple?
+	// Usually assume one. We can cancel previous if any.
+	if g.cancel != nil {
+		g.cancel()
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	g.cancel = cancel
+
 	go func() {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithCancel(ctx)
-		g.cancel.Store(&cancel)
 		// Use the timing wheel tick duration (clock interval) for consistent updates,
 		// or respect user provided 'dur' but at minimum clock resolution.
-		// If user provides a duration, it's how often we *check* for expired items.
-		// The timing wheel internally handles fine-grained expiration.
 		tick := time.NewTicker(dur)
 		defer tick.Stop()
 		for {
@@ -425,7 +436,7 @@ func (g *gache[V]) Size() (size uintptr) {
 	size += unsafe.Sizeof(g.expFuncEnabled) // bool
 	size += unsafe.Sizeof(g.expire)         // int64
 	size += unsafe.Sizeof(g.l)              // uint64
-	size += unsafe.Sizeof(g.cancel)         // atomic.Pointer[context.CancelFunc]
+	size += unsafe.Sizeof(g.cancel)         // context.CancelFunc (approx 8-16 bytes) + mutex
 	size += unsafe.Sizeof(g.expChan)        // chan keyValue[V]
 	size += unsafe.Sizeof(g.expFunc)        // func(context.Context, string, V)
 	// clock size?
@@ -459,12 +470,14 @@ func (g *gache[V]) Read(r io.Reader) error {
 
 // Stop stops the gache instance, including the clock and expire daemon.
 func (g *gache[V]) Stop() {
+	g.lifecycleMu.Lock()
+	defer g.lifecycleMu.Unlock()
+
 	if g.clock != nil {
 		g.clock.Stop()
 	}
-	if c := g.cancel.Load(); c != nil {
-		cancel := *c
-		cancel()
+	if g.cancel != nil {
+		g.cancel()
 	}
 }
 
