@@ -93,6 +93,10 @@ const (
 	NoTTL time.Duration = -1
 )
 
+// hashSeed is initialized once at package load time and shared by all cache instances.
+// This is an intentional design choice to avoid per-instance seed management overhead.
+// If your threat model requires each cache instance to have a distinct hash seed for
+// stronger isolation against collision attacks, do not assume per-instance seeding.
 var hashSeed = maphash.MakeSeed()
 
 // New returns Gache (*gache) instance
