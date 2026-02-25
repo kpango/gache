@@ -3,6 +3,7 @@ package gache
 import (
 	"context"
 	"encoding/gob"
+	"hash/maphash"
 	"io"
 	"runtime"
 	"sync"
@@ -66,6 +67,7 @@ type (
 		expFuncEnabled bool
 		expire         int64
 		l              uint64
+		maxKeyLength   uint64
 	}
 
 	value[V any] struct {
@@ -89,15 +91,15 @@ const (
 
 	// NoTTL can be use for disabling ttl cache expiration
 	NoTTL time.Duration = -1
-
-	maxHashKeyLength = 256
 )
+
+var hashSeed = maphash.MakeSeed()
 
 // New returns Gache (*gache) instance
 func New[V any](opts ...Option[V]) Gache[V] {
 	g := new(gache[V])
 	for _, opt := range append([]Option[V]{
-		WithDefaultExpiration[V](time.Second * 30),
+		WithMaxKeyLength[V](256),
 	}, opts...) {
 		opt(g)
 	}
@@ -110,9 +112,22 @@ func newMap[V any]() (m *Map[string, *value[V]]) {
 	return new(Map[string, *value[V]])
 }
 
-func getShardID(key string) (id uint64) {
-	if len(key) > maxHashKeyLength {
-		return xxh3.HashString(key[:maxHashKeyLength]) & mask
+func getShardID(key string, kl uint64) (id uint64) {
+	if kl != 0 {
+		kl = min(uint64(len(key)), kl)
+		if kl == 1 {
+			return uint64(key[0]) & mask
+		}
+		if kl <= 32 {
+			return maphash.String(hashSeed, key[:kl]) & mask
+		}
+		return xxh3.HashString(key[:kl]) & mask
+	}
+	if len(key) == 1 {
+		return uint64(key[0]) & mask
+	}
+	if len(key) <= 32 {
+		return maphash.String(hashSeed, key) & mask
 	}
 	return xxh3.HashString(key) & mask
 }
@@ -177,14 +192,11 @@ func (g *gache[V]) ToMap(ctx context.Context) *sync.Map {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	g.Range(ctx, func(key string, val V, exp int64) (ok bool) {
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			m.Store(key, val)
-			wg.Done()
-		}()
+		})
 		return true
 	})
-
 	return m
 }
 
@@ -204,7 +216,7 @@ func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 // get returns value & exists from key
 func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
 	var val *value[V]
-	shard := g.shards[getShardID(key)]
+	shard := g.shards[getShardID(key, g.maxKeyLength)]
 	val, ok = shard.Load(key)
 	if !ok {
 		return v, 0, false
@@ -234,7 +246,7 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	if expire > 0 {
 		expire = fastime.UnixNanoNow() + expire
 	}
-	shard := g.shards[getShardID(key)]
+	shard := g.shards[getShardID(key, g.maxKeyLength)]
 	_, loaded := shard.Swap(key, &value[V]{
 		expire: expire,
 		val:    val,
@@ -257,7 +269,7 @@ func (g *gache[V]) Set(key string, val V) {
 // Delete deletes value from Gache using key
 func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 	var val *value[V]
-	val, loaded = g.shards[getShardID(key)].LoadAndDelete(key)
+	val, loaded = g.shards[getShardID(key, g.maxKeyLength)].LoadAndDelete(key)
 	if loaded {
 		atomic.AddUint64(&g.l, ^uint64(0))
 	}

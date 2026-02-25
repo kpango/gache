@@ -38,3 +38,10 @@ func WithExpiredHookFunc[V any](f func(ctx context.Context, key string, v V)) Op
 		return nil
 	}
 }
+
+func WithMaxKeyLength[V any](kl uint64) Option[V] {
+	return func(g *gache[V]) error {
+		g.maxKeyLength = kl
+		return nil
+	}
+}

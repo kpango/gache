@@ -16,23 +16,23 @@ import (
 
 type DefaultMap struct {
 	mu   sync.RWMutex
-	data map[interface{}]interface{}
+	data map[any]any
 }
 
 func NewDefault() *DefaultMap {
 	return &DefaultMap{
-		data: make(map[interface{}]interface{}),
+		data: make(map[any]any),
 	}
 }
 
-func (m *DefaultMap) Get(key interface{}) (interface{}, bool) {
+func (m *DefaultMap) Get(key any) (any, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	v, ok := m.data[key]
 	return v, ok
 }
 
-func (m *DefaultMap) Set(key, val interface{}) {
+func (m *DefaultMap) Set(key, val any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.data[key] = val
@@ -56,7 +56,7 @@ var (
 )
 
 func init() {
-	for i := 0; i < bigDataCount; i++ {
+	for range bigDataCount {
 		bigData[randStr(bigDataLen)] = randStr(bigDataLen)
 	}
 }
@@ -193,21 +193,17 @@ func shutdown() {
 func BenchmarkHeavyMixedInt_gache(b *testing.B) {
 	gc := New[int]().SetDefaultExpire(10 * time.Second)
 	var wg sync.WaitGroup
-	for index := 0; index < 10000; index++ {
-		wg.Add(1)
-		go func() {
-			for i := 0; i < 8192; i++ {
+	for range 10000 {
+		wg.Go(func() {
+			for i := range 8192 {
 				gc.Set(Int64Key(int64(i)), i+1)
 			}
-			wg.Done()
-		}()
-		wg.Add(1)
-		go func() {
-			for i := 0; i < 8192; i++ {
+		})
+		wg.Go(func() {
+			for i := range 8192 {
 				gc.Get(Int64Key(int64(i)))
 			}
-			wg.Done()
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -268,18 +264,16 @@ func BenchmarkHeavyReadInt_gache(b *testing.B) {
 	GCPause()
 
 	// slen = 512
-	for i := 0; i < 1024; i++ {
+	for i := range 1024 {
 		gc.Set(Int64Key(int64(i)), i+1)
 	}
 	var wg sync.WaitGroup
-	for index := 0; index < 10000; index++ {
-		wg.Add(1)
-		go func() {
-			for i := 0; i < 1024; i++ {
+	for range 10000 {
+		wg.Go(func() {
+			for i := range 1024 {
 				gc.Get(Int64Key(int64(i)))
 			}
-			wg.Done()
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -292,15 +286,13 @@ func BenchmarkHeavyWriteInt_gache(b *testing.B) {
 
 	// slen = 512
 	var wg sync.WaitGroup
-	for index := 0; index < 10000; index++ {
+	for index := range 10000 {
 		start := index
-		wg.Add(1)
-		go func() {
-			for i := 0; i < 8192; i++ {
+		wg.Go(func() {
+			for i := range 8192 {
 				gc.Set(Int64Key(int64(i+start)), i+1)
 			}
-			wg.Done()
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -313,15 +305,13 @@ func BenchmarkHeavyWrite1K_gache(b *testing.B) {
 
 	// slen = 512
 	var wg sync.WaitGroup
-	for index := 0; index < 10000; index++ {
+	for index := range 10000 {
 		start := index
-		wg.Add(1)
-		go func() {
-			for i := 0; i < 8192; i++ {
+		wg.Go(func() {
+			for i := range 8192 {
 				gc.Set(Int64Key(int64(i+start)), Data1K)
 			}
-			wg.Done()
-		}()
+		})
 	}
 	wg.Wait()
 

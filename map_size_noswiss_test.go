@@ -103,7 +103,7 @@ func ensureGrowthCompletion[K comparable, V any](m map[K]V) {
 	if h == nil || h.oldbuckets == nil {
 		return
 	}
-	for pass := 0; pass < 4; pass++ {
+	for range 4 {
 		for k := range m {
 			_ = m[k]
 		}
@@ -161,7 +161,7 @@ func TestMapSize_Growth_IntInt(t *testing.T) {
 	// Insert enough elements to force multiple resizes.
 	m := make(map[int]int)
 	const N = 1 << 12 // 4096
-	for i := 0; i < N; i++ {
+	for i := range N {
 		m[i] = i
 	}
 
@@ -183,7 +183,7 @@ func TestMapSize_StringValueIndependence_InPlaceUpdate(t *testing.T) {
 	// backing stores, which live outside the map.
 	m := make(map[int]string)
 	const N = 2048
-	for i := 0; i < N; i++ {
+	for i := range N {
 		m[i] = "x"
 	}
 	ensureGrowthCompletion[int, string](m)
@@ -196,7 +196,7 @@ func TestMapSize_StringValueIndependence_InPlaceUpdate(t *testing.T) {
 	}
 	longStr := string(long)
 
-	for i := 0; i < N; i++ {
+	for i := range N {
 		m[i] = longStr
 	}
 	ensureGrowthCompletion[int, string](m)
@@ -213,7 +213,7 @@ func TestMapSize_ZeroSizedTypes(t *testing.T) {
 	// Case 1: V is zero-sized (struct{}). Expect layout/alignment to be correct.
 	{
 		m := make(map[int]struct{})
-		for i := 0; i < 1024; i++ {
+		for i := range 1024 {
 			m[i] = struct{}{}
 		}
 		ensureGrowthCompletion[int, struct{}](m)
@@ -277,7 +277,7 @@ func TestMapSize_ExtrasPresenceAccounting(t *testing.T) {
 	m := make(map[int]int)
 	// Create enough entries to likely create/keep mapextra (runtime may allocate
 	// it lazily for overflow bookkeeping). Even if not present, both paths are valid.
-	for i := 0; i < 1024; i++ {
+	for i := range 1024 {
 		m[i] = i
 	}
 	ensureGrowthCompletion[int, int](m)

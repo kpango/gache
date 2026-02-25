@@ -148,7 +148,7 @@ func overflowSizes(extra *mapextra, oneBucketSize uintptr) (metaSize, bucketsSiz
 		s := *sp
 		// Slice header + backing array capacity (pointer-sized elements).
 		metaSize += sliceHeaderSize + uintptr(cap(s))*ptrSize
-		for i := 0; i < len(s); i++ {
+		for i := range s {
 			b := s[i]
 			if b == nil {
 				continue
