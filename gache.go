@@ -103,6 +103,7 @@ var hashSeed = maphash.MakeSeed()
 func New[V any](opts ...Option[V]) Gache[V] {
 	g := new(gache[V])
 	for _, opt := range append([]Option[V]{
+		WithDefaultExpiration[V](30 * time.Second),
 		WithMaxKeyLength[V](256),
 	}, opts...) {
 		opt(g)
