@@ -38,41 +38,21 @@ type (
 		ToRawMap(context.Context) map[string]V
 		Write(context.Context, io.Writer) error
 		Stop()
-
-		// TODO Future works below
-		// func ExtendExpire(string, addExp time.Duration){}
-		// func (g *gache)ExtendExpire(string, addExp time.Duration){}
-		// func GetRefresh(string)(V, bool){}
-		// func (g *gache)GetRefresh(string)(V, bool){}
-		// func GetRefreshWithDur(string, time.Duration)(V, bool){}
-		// func (g *gache)GetRefreshWithDur(string, time.Duration)(V, bool){}
-		// func GetWithIgnoredExpire(string)(V, bool){}
-		// func (g *gache)GetWithIgnoredExpire(string)(V, bool){}
-		// func Keys(context.Context)[]string{}
-		// func (g *gache)Keys(context.Context)[]string{}
-		// func Pop(string)(V, bool) // Get & Delete{}
-		// func (g *gache)Pop(string)(V, bool) // Get & Delete{}
-		// func SetIfNotExists(string, V){}
-		// func (g *gache)SetIfNotExists(string, V){}
-		// func SetWithExpireIfNotExists(string, V, time.Duration){}
-		// func (g *gache)SetWithExpireIfNotExists(string, V, time.Duration){}
 	}
 
 	// gache is base instance type
 	gache[V any] struct {
-		shards         [slen]*Map[string, *value[V]]
+		shards         [slen]*Map[V]
 		cancel         atomic.Pointer[context.CancelFunc]
-		expChan        chan keyValue[V]
+		// expChan stores pointers to reused keyValue structs
+		expChan        chan *keyValue[V]
 		expFunc        func(context.Context, string, V)
+		kvPool         sync.Pool
 		expFuncEnabled bool
 		expire         int64
 		l              uint64
 		maxKeyLength   uint64
-	}
-
-	value[V any] struct {
-		val    V
-		expire int64
+		expireCursor   uint64 // For incremental expiration
 	}
 
 	keyValue[V any] struct {
@@ -84,36 +64,55 @@ type (
 const (
 	// slen is shards length
 	slen = 512
-	// slen = 4096
 	// mask is slen-1 Hex value
 	mask = 0x1FF
-	// mask = 0xFFF
 
 	// NoTTL can be use for disabling ttl cache expiration
 	NoTTL time.Duration = -1
 )
 
 // hashSeed is initialized once at package load time and shared by all cache instances.
-// This is an intentional design choice to avoid per-instance seed management overhead.
-// If your threat model requires each cache instance to have a distinct hash seed for
-// stronger isolation against collision attacks, do not assume per-instance seeding.
 var hashSeed = maphash.MakeSeed()
+
+// now is a cached timestamp updated every 100ms
+var now int64
+
+func init() {
+	atomic.StoreInt64(&now, fastime.UnixNanoNow())
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for t := range ticker.C {
+			atomic.StoreInt64(&now, t.UnixNano())
+		}
+	}()
+}
+
+// Now returns the cached atomic timestamp
+func Now() int64 {
+	return atomic.LoadInt64(&now)
+}
 
 // New returns Gache (*gache) instance
 func New[V any](opts ...Option[V]) Gache[V] {
 	g := new(gache[V])
+	g.kvPool = sync.Pool{
+		New: func() any {
+			return new(keyValue[V])
+		},
+	}
 	for _, opt := range append([]Option[V]{
 		WithMaxKeyLength[V](256),
 	}, opts...) {
 		opt(g)
 	}
-	g.Clear()
-	g.expChan = make(chan keyValue[V], len(g.shards)*10)
+	g.Clear() // Initialize shards
+	g.expChan = make(chan *keyValue[V], len(g.shards)*10)
 	return g
 }
 
-func newMap[V any]() (m *Map[string, *value[V]]) {
-	return new(Map[string, *value[V]])
+func newMap[V any]() (m *Map[V]) {
+	return NewMap[V]()
 }
 
 func getShardID(key string, kl uint64) (id uint64) {
@@ -134,11 +133,6 @@ func getShardID(key string, kl uint64) (id uint64) {
 		return maphash.String(hashSeed, key) & mask
 	}
 	return xxh3.HashString(key) & mask
-}
-
-// isValid checks expiration of value
-func (v *value[V]) isValid() (valid bool) {
-	return v.expire <= 0 || fastime.UnixNanoNow() <= v.expire
 }
 
 // SetDefaultExpire set expire duration
@@ -171,14 +165,22 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithCancel(ctx)
 		g.cancel.Store(&cancel)
+
 		tick := time.NewTicker(dur)
+
 		for {
 			select {
 			case <-ctx.Done():
 				tick.Stop()
 				return
 			case kv := <-g.expChan:
-				go g.expFunc(ctx, kv.key, kv.value)
+				k, v := kv.key, kv.value
+				// Return to pool immediately
+				g.kvPool.Put(kv)
+
+				// Execute callback
+				go g.expFunc(ctx, k, v)
+
 			case <-tick.C:
 				go func() {
 					g.DeleteExpired(ctx)
@@ -219,19 +221,21 @@ func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 
 // get returns value & exists from key
 func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
-	var val *value[V]
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
-	val, ok = shard.Load(key)
+
+	// Use cached time to avoid syscall overhead
+	now := Now()
+	v, expire, ok = shard.Load(key, now)
 	if !ok {
 		return v, 0, false
 	}
 
-	if val.isValid() {
-		return val.val, val.expire, true
+	if expire > 0 && expire < now {
+		g.expiration(key)
+		return v, expire, false
 	}
 
-	g.expiration(key)
-	return v, val.expire, false
+	return v, expire, true
 }
 
 // Get returns value & exists from key
@@ -248,14 +252,11 @@ func (g *gache[V]) GetWithExpire(key string) (v V, expire int64, ok bool) {
 // set sets key-value & expiration to Gache
 func (g *gache[V]) set(key string, val V, expire int64) {
 	if expire > 0 {
-		expire = fastime.UnixNanoNow() + expire
+		expire = Now() + expire
 	}
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
-	_, loaded := shard.Swap(key, &value[V]{
-		expire: expire,
-		val:    val,
-	})
-	if !loaded {
+	isNew := shard.Store(key, val, expire)
+	if isNew {
 		atomic.AddUint64(&g.l, 1)
 	}
 }
@@ -272,13 +273,10 @@ func (g *gache[V]) Set(key string, val V) {
 
 // Delete deletes value from Gache using key
 func (g *gache[V]) Delete(key string) (v V, loaded bool) {
-	var val *value[V]
-	val, loaded = g.shards[getShardID(key, g.maxKeyLength)].LoadAndDelete(key)
+	shard := g.shards[getShardID(key, g.maxKeyLength)]
+	v, loaded = shard.Delete(key)
 	if loaded {
 		atomic.AddUint64(&g.l, ^uint64(0))
-	}
-	if val != nil && loaded {
-		return val.val, loaded
 	}
 	return v, loaded
 }
@@ -287,37 +285,71 @@ func (g *gache[V]) expiration(key string) {
 	v, loaded := g.Delete(key)
 
 	if loaded && g.expFuncEnabled {
-		g.expChan <- keyValue[V]{key: key, value: v}
+		// Use sync.Pool for keyValue struct
+		kv := g.kvPool.Get().(*keyValue[V])
+		kv.key = key
+		kv.value = v
+
+		select {
+		case g.expChan <- kv:
+		default:
+			// Buffer full, drop event and return to pool
+			g.kvPool.Put(kv)
+		}
 	}
 }
 
 // DeleteExpired deletes expired value from Gache it can be cancel using context
 func (g *gache[V]) DeleteExpired(ctx context.Context) (rows uint64) {
+	// Incremental Eviction: Scan a subset of shards
+	const batchSize = 10
+	startCursor := atomic.LoadUint64(&g.expireCursor)
+	nextCursor := (startCursor + batchSize) % slen
+	atomic.StoreUint64(&g.expireCursor, nextCursor)
+
+	n := Now()
+
 	var wg sync.WaitGroup
-	for i := range g.shards {
+	for i := 0; i < batchSize; i++ {
+		idx := (startCursor + uint64(i)) % slen
 		wg.Add(1)
-		go func(c context.Context, idx int) {
+		go func(c context.Context, shardIdx int) {
 			defer wg.Done()
 			select {
 			case <-c.Done():
 				return
 			default:
-				g.shards[idx].Range(func(k string, v *value[V]) (ok bool) {
-					if !v.isValid() {
-						g.expiration(k)
-						atomic.AddUint64(&rows, 1)
+				// Execute Timing Wheel eviction on this shard
+				count := g.shards[shardIdx].EvictExpired(n, func(k string, v V) {
+					if g.expFuncEnabled {
+						// Allocate from pool
+						kv := g.kvPool.Get().(*keyValue[V])
+						kv.key = k
+						kv.value = v
+
+						select {
+						case g.expChan <- kv:
+						default:
+							g.kvPool.Put(kv)
+						}
 					}
-					return true
 				})
+				atomic.AddUint64(&rows, count)
 			}
-		}(ctx, i)
+		}(ctx, int(idx))
 	}
 	wg.Wait()
-	return atomic.LoadUint64(&rows)
+
+	if rows > 0 {
+		atomic.AddUint64(&g.l, uint64(0) - rows)
+	}
+
+	return rows
 }
 
 // Range calls f sequentially for each key and value present in the Gache.
 func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gache[V] {
+	now := Now()
 	wg := new(sync.WaitGroup)
 	for i := range g.shards {
 		wg.Add(1)
@@ -327,11 +359,10 @@ func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gac
 			case <-c.Done():
 				return
 			default:
-				g.shards[idx].Range(func(k string, v *value[V]) (ok bool) {
-					if v.isValid() {
-						return f(k, v.val, v.expire)
+				g.shards[idx].Range(func(k string, v V, exp int64) (ok bool) {
+					if exp <= 0 || exp > now {
+						return f(k, v, exp)
 					}
-					g.expiration(k)
 					return true
 				})
 			}
@@ -398,8 +429,5 @@ func (g *gache[V]) Clear() {
 			g.shards[i].Clear()
 		}
 	}
-}
-
-func (v *value[V]) Size() (size uintptr) {
-	return unsafe.Sizeof(v.expire) + unsafe.Sizeof(v.val)
+	atomic.StoreUint64(&g.l, 0)
 }
