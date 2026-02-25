@@ -38,23 +38,14 @@ type (
 		Write(context.Context, io.Writer) error
 		Stop()
 
-		// TODO Future works below
-		// func ExtendExpire(string, addExp time.Duration){}
-		// func (g *gache)ExtendExpire(string, addExp time.Duration){}
-		// func GetRefresh(string)(V, bool){}
-		// func (g *gache)GetRefresh(string)(V, bool){}
-		// func GetRefreshWithDur(string, time.Duration)(V, bool){}
-		// func (g *gache)GetRefreshWithDur(string, time.Duration)(V, bool){}
-		// func GetWithIgnoredExpire(string)(V, bool){}
-		// func (g *gache)GetWithIgnoredExpire(string)(V, bool){}
-		// func Keys(context.Context)[]string{}
-		// func (g *gache)Keys(context.Context)[]string{}
-		// func Pop(string)(V, bool) // Get & Delete{}
-		// func (g *gache)Pop(string)(V, bool) // Get & Delete{}
-		// func SetIfNotExists(string, V){}
-		// func (g *gache)SetIfNotExists(string, V){}
-		// func SetWithExpireIfNotExists(string, V, time.Duration){}
-		// func (g *gache)SetWithExpireIfNotExists(string, V, time.Duration){}
+		ExtendExpire(string, time.Duration)
+		GetRefresh(string) (V, bool)
+		GetRefreshWithDur(string, time.Duration) (V, bool)
+		GetWithIgnoredExpire(string) (V, bool)
+		Keys(context.Context) []string
+		Pop(string) (V, bool)
+		SetIfNotExists(string, V)
+		SetWithExpireIfNotExists(string, V, time.Duration)
 	}
 
 	// gache is base instance type
@@ -394,4 +385,128 @@ func (g *gache[V]) Clear() {
 
 func (v *value[V]) Size() (size uintptr) {
 	return unsafe.Sizeof(v.expire) + unsafe.Sizeof(v.val)
+}
+
+// ExtendExpire extends the expiration of the key by addExp duration.
+func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
+	for {
+		shard := g.shards[getShardID(key)]
+		val, ok := shard.Load(key)
+		if !ok {
+			return
+		}
+		if !val.isValid() {
+			g.expiration(key)
+			return
+		}
+
+		newVal := &value[V]{
+			val:    val.val,
+			expire: val.expire + int64(addExp),
+		}
+		if shard.CompareAndSwap(key, val, newVal) {
+			return
+		}
+	}
+}
+
+// GetRefresh returns value & exists from key and refreshes the expiration.
+func (g *gache[V]) GetRefresh(key string) (V, bool) {
+	return g.GetRefreshWithDur(key, time.Duration(atomic.LoadInt64(&g.expire)))
+}
+
+// GetRefreshWithDur returns value & exists from key and refreshes the expiration with d duration.
+func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool) {
+	for {
+		shard := g.shards[getShardID(key)]
+		val, ok := shard.Load(key)
+		if !ok {
+			return v, false
+		}
+		if !val.isValid() {
+			g.expiration(key)
+			return v, false
+		}
+
+		newVal := &value[V]{
+			val:    val.val,
+			expire: fastime.UnixNanoNow() + int64(d),
+		}
+		if shard.CompareAndSwap(key, val, newVal) {
+			return newVal.val, true
+		}
+	}
+}
+
+// GetWithIgnoredExpire returns value & exists from key, ignoring expiration.
+func (g *gache[V]) GetWithIgnoredExpire(key string) (v V, ok bool) {
+	val, ok := g.shards[getShardID(key)].Load(key)
+	if !ok {
+		return v, false
+	}
+	return val.val, true
+}
+
+// Keys returns all keys in the Gache.
+func (g *gache[V]) Keys(ctx context.Context) []string {
+	keys := make([]string, 0, g.Len())
+	mu := new(sync.Mutex)
+	g.Range(ctx, func(key string, _ V, _ int64) bool {
+		mu.Lock()
+		keys = append(keys, key)
+		mu.Unlock()
+		return true
+	})
+	return keys
+}
+
+// Pop returns value & exists from key and deletes it.
+func (g *gache[V]) Pop(key string) (v V, ok bool) {
+	val, loaded := g.shards[getShardID(key)].LoadAndDelete(key)
+	if !loaded {
+		return v, false
+	}
+	atomic.AddUint64(&g.l, ^uint64(0))
+	if val.isValid() {
+		return val.val, true
+	}
+	if g.expFuncEnabled {
+		g.expChan <- keyValue[V]{key: key, value: val.val}
+	}
+	return v, false
+}
+
+// SetIfNotExists sets key-value to Gache if it does not exist.
+func (g *gache[V]) SetIfNotExists(key string, val V) {
+	g.SetWithExpireIfNotExists(key, val, time.Duration(atomic.LoadInt64(&g.expire)))
+}
+
+// SetWithExpireIfNotExists sets key-value & expiration to Gache if it does not exist.
+func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) {
+	exp := int64(d)
+	if exp > 0 {
+		exp += fastime.UnixNanoNow()
+	}
+
+	newVal := &value[V]{
+		val:    val,
+		expire: exp,
+	}
+
+	shard := g.shards[getShardID(key)]
+	for {
+		actual, loaded := shard.LoadOrStore(key, newVal)
+		if !loaded {
+			atomic.AddUint64(&g.l, 1)
+			return
+		}
+
+		if actual.isValid() {
+			return
+		}
+
+		if shard.CompareAndSwap(key, actual, newVal) {
+			return
+		}
+	}
 }
