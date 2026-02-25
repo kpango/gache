@@ -49,3 +49,26 @@ func WithMaxKeyLength[V any](kl uint64) Option[V] {
 		return nil
 	}
 }
+
+// WithClockInterval sets the internal clock update interval and timing wheel resolution.
+// Default is 100ms. Lower values provide more precise expiration but higher CPU usage.
+func WithClockInterval[V any](interval time.Duration) Option[V] {
+	return func(g *gache[V]) error {
+		if interval > 0 {
+			g.clockInterval = interval
+		}
+		return nil
+	}
+}
+
+// WithTimingWheelBits sets the size of the timing wheel as a power of 2.
+// Default is 14 (16384 buckets). Higher values allow covering longer expiration periods
+// without bucket reuse collision issues, though collision impact is minimal.
+func WithTimingWheelBits[V any](bits int) Option[V] {
+	return func(g *gache[V]) error {
+		if bits > 0 {
+			g.wheelBits = bits
+		}
+		return nil
+	}
+}

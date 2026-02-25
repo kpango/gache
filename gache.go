@@ -62,6 +62,10 @@ type (
 		expire         int64
 		l              uint64
 		maxKeyLength   uint64
+
+		// configuration for clock and timing wheel
+		clockInterval time.Duration
+		wheelBits     int
 	}
 
 	value[V any] struct {
@@ -83,6 +87,9 @@ const (
 
 	// NoTTL can be use for disabling ttl cache expiration
 	NoTTL time.Duration = -1
+
+	defaultClockInterval = 100 * time.Millisecond
+	defaultWheelBits     = 14
 )
 
 var (
@@ -92,26 +99,33 @@ var (
 
 // New creates a new Gache instance
 func New[V any](opts ...Option[V]) Gache[V] {
-	clock := NewClock(100 * time.Millisecond)
 	g := &gache[V]{
-		expire:       int64(NoTTL),
-		maxKeyLength: 256,
+		expire:        int64(NoTTL),
+		maxKeyLength:  256,
+		clockInterval: defaultClockInterval,
+		wheelBits:     defaultWheelBits,
 		kvPool: &sync.Pool{
 			New: func() any {
 				return new(keyValue[V])
 			},
 		},
-		timer: newTimingWheel(clock.Now()),
-		clock: clock,
 	}
-	for i := range g.shards {
-		g.shards[i] = new(Map[string, *value[V]])
-	}
+
+	// Apply options first to get configuration
 	for _, opt := range opts {
 		if err := opt(g); err != nil {
 			panic(err)
 		}
 	}
+
+	// Initialize components dependent on configuration
+	g.clock = NewClock(g.clockInterval)
+	g.timer = newTimingWheel(g.clock.Now(), g.clockInterval, g.wheelBits)
+
+	for i := range g.shards {
+		g.shards[i] = new(Map[string, *value[V]])
+	}
+
 	// Initialize expChan with buffer size
 	g.expChan = make(chan *keyValue[V], len(g.shards)*10)
 	return g
@@ -172,6 +186,10 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithCancel(ctx)
 		g.cancel.Store(&cancel)
+		// Use the timing wheel tick duration (clock interval) for consistent updates,
+		// or respect user provided 'dur' but at minimum clock resolution.
+		// If user provides a duration, it's how often we *check* for expired items.
+		// The timing wheel internally handles fine-grained expiration.
 		tick := time.NewTicker(dur)
 		defer tick.Stop()
 		for {

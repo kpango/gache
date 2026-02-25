@@ -5,29 +5,27 @@ import (
 	"time"
 )
 
-const (
-	// wheelBits is the power of 2 for the wheel size.
-	// 14 bits = 16384 buckets.
-	// At 100ms tick, span is ~27 minutes.
-	wheelBits = 14
-	wheelSize = 1 << wheelBits
-	wheelMask = wheelSize - 1
-
-	// tickDuration is the resolution of the timing wheel.
-	// It should match the clock update frequency.
-	tickDuration = int64(100 * time.Millisecond)
-)
-
 type timingWheel struct {
 	mu           sync.Mutex
-	buckets      [wheelSize][]string
+	buckets      [][]string
 	lastCheck    int64
+	tickDuration int64
+	wheelSize    int64
+	wheelMask    int64
 }
 
 // newTimingWheel creates a new timing wheel initialized with the current time.
-func newTimingWheel(now int64) *timingWheel {
+func newTimingWheel(now int64, tickDuration time.Duration, wheelBits int) *timingWheel {
+	if wheelBits <= 0 {
+		wheelBits = defaultWheelBits
+	}
+	wheelSize := int64(1 << wheelBits)
 	return &timingWheel{
-		lastCheck: now,
+		lastCheck:    now,
+		tickDuration: int64(tickDuration),
+		wheelSize:    wheelSize,
+		wheelMask:    wheelSize - 1,
+		buckets:      make([][]string, wheelSize),
 	}
 }
 
@@ -38,7 +36,7 @@ func (tw *timingWheel) add(key string, expire int64) {
 
 	// Calculate bucket index.
 	// We use integer division by tick duration masked by wheel size.
-	idx := (expire / tickDuration) & wheelMask
+	idx := (expire / tw.tickDuration) & tw.wheelMask
 	tw.buckets[idx] = append(tw.buckets[idx], key)
 }
 
@@ -51,8 +49,8 @@ func (tw *timingWheel) advance(now int64) []string {
 		return nil
 	}
 
-	startTick := tw.lastCheck / tickDuration
-	endTick := now / tickDuration
+	startTick := tw.lastCheck / tw.tickDuration
+	endTick := now / tw.tickDuration
 
 	if startTick == endTick {
 		tw.lastCheck = now
@@ -62,13 +60,13 @@ func (tw *timingWheel) advance(now int64) []string {
 	var expiredKeys []string
 
 	count := endTick - startTick
-	if count > wheelSize {
-		count = wheelSize
+	if count > tw.wheelSize {
+		count = tw.wheelSize
 	}
 
 	for i := int64(1); i <= count; i++ {
 		currentTick := startTick + i
-		idx := currentTick & wheelMask
+		idx := currentTick & tw.wheelMask
 
 		bucket := tw.buckets[idx]
 		if len(bucket) > 0 {
