@@ -53,6 +53,7 @@ type (
 	gache[V any] struct {
 		shards         [slen]*Map[string, value[V]]
 		timer          *timingWheel
+		clock          *Clock
 		cancel         atomic.Pointer[context.CancelFunc]
 		expChan        chan *keyValue[V]
 		kvPool         *sync.Pool
@@ -91,6 +92,7 @@ var (
 
 // New creates a new Gache instance
 func New[V any](opts ...Option[V]) Gache[V] {
+	clock := NewClock(100 * time.Millisecond)
 	g := &gache[V]{
 		expire:       int64(NoTTL),
 		maxKeyLength: 256,
@@ -99,7 +101,8 @@ func New[V any](opts ...Option[V]) Gache[V] {
 				return new(keyValue[V])
 			},
 		},
-		timer: newTimingWheel(),
+		timer: newTimingWheel(clock.Now()),
+		clock: clock,
 	}
 	for i := range g.shards {
 		g.shards[i] = newMap[string, value[V]]()
@@ -135,8 +138,8 @@ func getShardID(key string, kl uint64) (id uint64) {
 }
 
 // isValid checks expiration of value
-func (v value[V]) isValid() (valid bool) {
-	return v.expire <= 0 || Now() <= v.expire
+func (v value[V]) isValid(now int64) (valid bool) {
+	return v.expire <= 0 || now <= v.expire
 }
 
 // SetDefaultExpire set expire duration
@@ -169,11 +172,6 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithCancel(ctx)
 		g.cancel.Store(&cancel)
-		// Use the timing wheel tick duration (or user provided dur if reasonable)
-		// Since timing wheel has fixed tick, we should tick at that rate or faster?
-		// But user provided `dur` for ticker. If `dur` is large, wheel updates slowly.
-		// If `dur` is small (e.g. 1ms), we update frequently.
-		// We respect user's `dur` but ensure it drives the wheel.
 		tick := time.NewTicker(dur)
 		defer tick.Stop()
 		for {
@@ -215,13 +213,14 @@ func (g *gache[V]) ToMap(ctx context.Context) *sync.Map {
 // ToRawMap returns All Cache Key-Value map
 func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 	m := make(map[string]V, g.Len())
+	now := g.clock.Now()
 	for i := range g.shards {
 		select {
 		case <-ctx.Done():
 			return m
 		default:
 			g.shards[i].Range(func(k string, v value[V]) bool {
-				if v.isValid() {
+				if v.isValid(now) {
 					m[k] = v.val
 				} else {
 					g.expiration(k)
@@ -241,7 +240,7 @@ func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
 		return v, 0, false
 	}
 
-	if val.isValid() {
+	if val.isValid(g.clock.Now()) {
 		return val.val, val.expire, true
 	}
 
@@ -263,41 +262,13 @@ func (g *gache[V]) GetWithExpire(key string) (v V, expire int64, ok bool) {
 // set sets key-value & expiration to Gache
 func (g *gache[V]) set(key string, val V, expire int64) {
 	if expire > 0 {
-		expire = Now() + expire
+		expire = g.clock.Now() + expire
 		// Add to timing wheel
 		g.timer.add(key, expire)
 	}
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
-	_, loaded := shard.LoadOrStore(key, value[V]{
-		expire: expire,
-		val:    val,
-	})
-	// If loaded, we overwrote? No, LoadOrStore returns existing if loaded.
-	// Wait, LoadOrStore returns actual value. If loaded, we did NOT store.
-	// Old code used Swap.
-	// If we want to overwrite, we should use Store or Swap.
-	// Let's check old code: `shard.Swap(key, &value...)`.
-	// Ah, old code used Swap.
-	// New code:
-	shard.Store(key, value[V]{
-		expire: expire,
-		val:    val,
-	})
-	// We increment length if it's new?
-	// But Store doesn't tell if it was new.
-	// We need `LoadOrStore` semantics if we track length?
-	// Old code: `_, loaded := shard.Swap(...)`. Swap returns loaded.
-	// My new Map.Swap returns loaded.
-	// So I should use Swap.
-	// But wait, `shard.Store` is simpler if we don't care about previous value.
-	// But `g.l` (length) needs update.
-	// If !loaded, increment `g.l`.
 
-	// Re-check Map implementation of Swap.
-	// func (m *Map[K, V]) Swap(key K, value V) (previous V, loaded bool)
-	// Yes, it returns loaded.
-
-	_, loaded = shard.Swap(key, value[V]{
+	_, loaded := shard.Swap(key, value[V]{
 		expire: expire,
 		val:    val,
 	})
@@ -329,36 +300,13 @@ func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 }
 
 func (g *gache[V]) expiration(key string) {
-	// Attempt to delete.
-	// To avoid race where we delete a valid updated item, we check validity.
-	// But `expiration` is called when we found it invalid?
-	// Or from `DeleteExpired`.
-	// If called from `get` (lazy expiration), we know it's invalid.
-	// But `Delete` deletes unconditionally.
-	// If we use `Delete`, we might delete a concurrently updated item?
-	// Old code used `LoadAndDelete` unconditionally.
-	// But `get` checked `isValid()` first.
-	// Between check and delete, update could happen.
-	// Old code: `val, loaded = shard.LoadAndDelete(key)`.
-	// If loaded, check `isValid`. If valid (updated), we deleted a valid item!
-	// Old code `expiration` calls `Delete`. `Delete` calls `LoadAndDelete`.
-	// Then sends to channel.
-	// If we accidentally deleted a valid item, `Delete` returns it.
-	// But old code `expiration` didn't check if deleted item was valid.
-	// Wait, `get` calls `expiration` only if invalid.
-	// But race exists.
-	// We should use `CompareAndDelete`.
-
-	// However, `expiration` helper is used in multiple places.
-	// Let's implement robust deletion.
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
 	val, ok := shard.Load(key)
 	if !ok {
 		return
 	}
 	// Check if expired
-	if val.isValid() {
-		// Someone updated it? Don't delete.
+	if val.isValid(g.clock.Now()) {
 		return
 	}
 
@@ -375,10 +323,6 @@ func (g *gache[V]) expiration(key string) {
 			select {
 			case g.expChan <- kv:
 			default:
-				// Channel full, drop or process in background?
-				// Requirement 4: "safely drop the notification or offload it...".
-				// Dropping is safe to avoid blocking.
-				// We return kv to pool if dropped.
 				*kv = keyValue[V]{}
 				g.kvPool.Put(kv)
 			}
@@ -387,35 +331,22 @@ func (g *gache[V]) expiration(key string) {
 }
 
 // DeleteExpired deletes expired value from Gache.
-// It advances the timing wheel and processes expired keys.
 func (g *gache[V]) DeleteExpired(ctx context.Context) (rows uint64) {
 	// Advance timing wheel
-	keys := g.timer.advance(Now())
-
-	// Process keys in parallel batches? Or sequentially?
-	// Since keys are from wheel, they are potentially many.
-	// We can process sequentially or spawn goroutines.
-	// Given simple goroutine overhead, sequential might be better unless huge.
-	// Or we can shard the keys by shardID?
-	// For simplicity and to avoid lock contention (random access), sequential is fine.
-	// The `expiration` helper handles concurrency (CompareAndDelete).
+	now := g.clock.Now()
+	keys := g.timer.advance(now)
 
 	for _, key := range keys {
 		select {
 		case <-ctx.Done():
 			return atomic.LoadUint64(&rows)
 		default:
-			// expiration helper handles checking validity and deletion safely
-			// We can't easily count rows here because expiration doesn't return bool.
-			// But we can check if it was deleted.
-			// Let's inline logic to count rows.
-
 			shard := g.shards[getShardID(key, g.maxKeyLength)]
 			val, ok := shard.Load(key)
 			if !ok {
 				continue
 			}
-			if !val.isValid() {
+			if !val.isValid(now) {
 				if shard.CompareAndDelete(key, val) {
 					atomic.AddUint64(&g.l, ^uint64(0))
 					atomic.AddUint64(&rows, 1)
@@ -440,6 +371,7 @@ func (g *gache[V]) DeleteExpired(ctx context.Context) (rows uint64) {
 // Range calls f sequentially for each key and value present in the Gache.
 func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gache[V] {
 	wg := new(sync.WaitGroup)
+	now := g.clock.Now()
 	for i := range g.shards {
 		wg.Add(1)
 		go func(c context.Context, idx int) {
@@ -449,7 +381,7 @@ func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gac
 				return
 			default:
 				g.shards[idx].Range(func(k string, v value[V]) (ok bool) {
-					if v.isValid() {
+					if v.isValid(now) {
 						return f(k, v.val, v.expire)
 					}
 					g.expiration(k)
@@ -475,6 +407,8 @@ func (g *gache[V]) Size() (size uintptr) {
 	size += unsafe.Sizeof(g.cancel)         // atomic.Pointer[context.CancelFunc]
 	size += unsafe.Sizeof(g.expChan)        // chan keyValue[V]
 	size += unsafe.Sizeof(g.expFunc)        // func(context.Context, string, V)
+	// clock size?
+	size += unsafe.Sizeof(g.clock)
 	for _, shard := range g.shards {
 		size += shard.Size()
 	}
@@ -502,8 +436,11 @@ func (g *gache[V]) Read(r io.Reader) error {
 	return nil
 }
 
-// Stop kills expire daemon
+// Stop stops the gache instance, including the clock and expire daemon.
 func (g *gache[V]) Stop() {
+	if g.clock != nil {
+		g.clock.Stop()
+	}
 	if c := g.cancel.Load(); c != nil {
 		cancel := *c
 		cancel()
@@ -533,7 +470,7 @@ func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
 		if !ok {
 			return
 		}
-		if !val.isValid() {
+		if !val.isValid(g.clock.Now()) {
 			g.expiration(key)
 			return
 		}
@@ -543,8 +480,6 @@ func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
 			expire: val.expire + int64(addExp),
 		}
 		if shard.CompareAndSwap(key, val, newVal) {
-			// Update timing wheel?
-			// We should add to wheel.
 			g.timer.add(key, newVal.expire)
 			return
 		}
@@ -564,14 +499,14 @@ func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool)
 		if !ok {
 			return v, false
 		}
-		if !val.isValid() {
+		if !val.isValid(g.clock.Now()) {
 			g.expiration(key)
 			return v, false
 		}
 
 		newVal := value[V]{
 			val:    val.val,
-			expire: Now() + int64(d),
+			expire: g.clock.Now() + int64(d),
 		}
 		if shard.CompareAndSwap(key, val, newVal) {
 			g.timer.add(key, newVal.expire)
@@ -609,7 +544,7 @@ func (g *gache[V]) Pop(key string) (v V, ok bool) {
 		return v, false
 	}
 	atomic.AddUint64(&g.l, ^uint64(0))
-	if val.isValid() {
+	if val.isValid(g.clock.Now()) {
 		return val.val, true
 	}
 	if g.expFuncEnabled {
@@ -635,7 +570,7 @@ func (g *gache[V]) SetIfNotExists(key string, val V) {
 func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) {
 	exp := int64(d)
 	if exp > 0 {
-		exp += Now()
+		exp += g.clock.Now()
 	}
 
 	newVal := value[V]{
@@ -654,7 +589,7 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 			return
 		}
 
-		if actual.isValid() {
+		if actual.isValid(g.clock.Now()) {
 			return
 		}
 

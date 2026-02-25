@@ -1,30 +1,51 @@
 package gache
 
 import (
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
-var (
-	now int64
-)
+// Clock provides an efficient way to get the current time with reduced syscall overhead.
+type Clock struct {
+	now    atomic.Int64
+	cancel chan struct{}
+	once   sync.Once
+}
 
-func init() {
-	updateTime()
+// NewClock creates a new Clock that updates its time every interval.
+func NewClock(interval time.Duration) *Clock {
+	c := &Clock{
+		cancel: make(chan struct{}),
+	}
+	c.update()
 	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		for range ticker.C {
-			updateTime()
+		for {
+			select {
+			case <-c.cancel:
+				return
+			case <-ticker.C:
+				c.update()
+			}
 		}
 	}()
+	return c
 }
 
-func updateTime() {
-	atomic.StoreInt64(&now, time.Now().UnixNano())
+func (c *Clock) update() {
+	c.now.Store(time.Now().UnixNano())
 }
 
-// Now returns the current unix nano timestamp from the cached atomic value.
-func Now() int64 {
-	return atomic.LoadInt64(&now)
+// Now returns the current cached unix nano timestamp.
+func (c *Clock) Now() int64 {
+	return c.now.Load()
+}
+
+// Stop stops the clock's background ticker.
+func (c *Clock) Stop() {
+	c.once.Do(func() {
+		close(c.cancel)
+	})
 }

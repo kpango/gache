@@ -24,9 +24,10 @@ type timingWheel struct {
 	lastCheck    int64
 }
 
-func newTimingWheel() *timingWheel {
+// newTimingWheel creates a new timing wheel initialized with the current time.
+func newTimingWheel(now int64) *timingWheel {
 	return &timingWheel{
-		lastCheck: Now(),
+		lastCheck: now,
 	}
 }
 
