@@ -182,9 +182,9 @@ func TestMapSizeSwiss_SmallMap_DirectGroup(t *testing.T) {
 }
 
 // TestMapSizeSwiss_LargeMap_DirectoryCreated builds a map large enough to
-// guarantee that the swissmap runtime has created a directory (dirLen > 0) with
-// multiple tables, then asserts that mapSize exactly matches the size composed
-// independently from mirrored internals.
+// try to ensure that the swissmap runtime has created a directory (dirLen > 0)
+// with multiple tables, then asserts that mapSize exactly matches the size
+// composed independently from mirrored internals when that layout is chosen.
 func TestMapSizeSwiss_LargeMap_DirectoryCreated(t *testing.T) {
 	const N = 1 << 13 // 8192 — well above any single-table capacity threshold
 
