@@ -280,9 +280,9 @@ func TestMapSizeSwiss_LargeMap_TableDedup(t *testing.T) {
 }
 
 // TestMapSizeSwiss_LargeMap_ZeroSizedValue exercises the group-size calculation
-// for a map whose value type is zero-sized (struct{}).  The slot layout is
-// special-cased by the compiler (one padding byte), so this catches any
-// regression in groupSizeFor / mapSize slot math.
+// for a map whose value type is zero-sized (struct{}). The slot layout is
+// special-cased by the compiler (one padding byte), so this test verifies
+// that mapSize and expectedSizeFromSwissInternals remain consistent for this case.
 func TestMapSizeSwiss_LargeMap_ZeroSizedValue(t *testing.T) {
 	const N = 1 << 13
 
