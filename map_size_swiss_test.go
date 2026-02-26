@@ -7,6 +7,36 @@ import (
 	"unsafe"
 )
 
+// refGroupsRef is a test-local mirror of the groupsRef type.
+type refGroupsRef struct {
+	data       unsafe.Pointer
+	lengthMask uint64
+}
+
+// refTableHdr is a test-local mirror of the tableHdr type.
+type refTableHdr struct {
+	used       uint16
+	capacity   uint16
+	growthLeft uint16
+	localDepth uint8
+	_pad       uint8 // explicit padding to align index to 8 bytes
+	index      int
+	groups     refGroupsRef
+}
+
+// refHmap is a test-local mirror of the swissmap hmap type.
+type refHmap struct {
+	used              uint64
+	seed              uintptr
+	dirPtr            unsafe.Pointer
+	dirLen            int
+	globalDepth       uint8
+	globalShift       uint8
+	writing           uint8
+	tombstonePossible bool
+	clearSeq          uint64
+}
+
 // groupSizeFor returns the size of one swissmap group for (K, V) independently
 // of mapSize, mirroring the group layout from internal/runtime/maps/group.go:
 //
@@ -44,7 +74,10 @@ func expectedSizeFromSwissInternals[K comparable, V any](m map[K]V) uintptr {
 	if m == nil {
 		return 0
 	}
-	h := (*hmap)(*(*unsafe.Pointer)(unsafe.Pointer(&m)))
+	// Cast through the test-local refHmap mirror rather than the production hmap.
+	// If the two definitions diverge, reading fields via this type will yield
+	// different values, causing the computed total to differ from mapSize.
+	h := (*refHmap)(*(*unsafe.Pointer)(unsafe.Pointer(&m)))
 	if h == nil {
 		return 0
 	}
@@ -74,9 +107,10 @@ func expectedSizeFromSwissInternals[K comparable, V any](m map[K]V) uintptr {
 		}
 	}
 
-	tableHdrSz := unsafe.Sizeof(tableHdr{})
+	// Use refTableHdr (test-local mirror) to read each table's fields.
+	tableHdrSz := unsafe.Sizeof(refTableHdr{})
 	for tp := range seen {
-		tbl := (*tableHdr)(tp)
+		tbl := (*refTableHdr)(tp)
 		total += tableHdrSz
 		// groups backing array: numGroups = lengthMask + 1 (always a power of 2).
 		numGroups := uintptr(tbl.groups.lengthMask + 1)
@@ -104,6 +138,66 @@ func requireDirLen(t *testing.T, h *hmap, minDir int) {
 	t.Helper()
 	if h.dirLen < minDir {
 		t.Skipf("swissmap dirLen=%d < %d; runtime chose a different layout — skipping directory path test", h.dirLen, minDir)
+	}
+}
+
+// TestSwissInternals_SanityChecks provides a third validation layer that is
+// independent of both mapSize and expectedSizeFromSwissInternals:
+func TestSwissInternals_SanityChecks(t *testing.T) {
+	t.Parallel()
+
+	// --- 1. Struct-size parity ---
+	if got, want := unsafe.Sizeof(refHmap{}), unsafe.Sizeof(hmap{}); got != want {
+		t.Errorf("refHmap size=%d != hmap size=%d — test and production mirrors diverged", got, want)
+	}
+	if got, want := unsafe.Sizeof(refTableHdr{}), unsafe.Sizeof(tableHdr{}); got != want {
+		t.Errorf("refTableHdr size=%d != tableHdr size=%d — test and production mirrors diverged", got, want)
+	}
+	if got, want := unsafe.Sizeof(refGroupsRef{}), unsafe.Sizeof(groupsRef{}); got != want {
+		t.Errorf("refGroupsRef size=%d != groupsRef size=%d — test and production mirrors diverged", got, want)
+	}
+
+	// --- 2. Hand-derived group size for map[int]int ---
+	var iZero int
+	slotBytes := 2 * unsafe.Sizeof(iZero) // key int + elem int, no padding needed
+	const ctrlBytes, slotsPerGroup = uintptr(8), uintptr(8)
+	wantGroupSize := ctrlBytes + slotsPerGroup*slotBytes
+	if got := groupSizeFor[int, int](); got != wantGroupSize {
+		t.Errorf("groupSizeFor[int,int]=%d, hand-derived want %d", got, wantGroupSize)
+	}
+
+	// --- 3. Power-of-2 invariant for lengthMask+1 ---
+	m := make(map[int]int)
+	for i := 0; i < 1024; i++ {
+		m[i] = i
+	}
+	nudgeSwissGrowth[int, int](m)
+
+	h := (*refHmap)(*(*unsafe.Pointer)(unsafe.Pointer(&m)))
+	if h == nil {
+		t.Fatal("nil refHmap for populated map")
+	}
+	if h.dirLen <= 0 {
+		t.Skipf("dirLen=%d: runtime used small-map layout, skipping power-of-2 check", h.dirLen)
+	}
+
+	const ptrSz = unsafe.Sizeof(uintptr(0))
+	visited := make(map[unsafe.Pointer]struct{}, h.dirLen)
+	for i := 0; i < h.dirLen; i++ {
+		tp := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(h.dirPtr) + uintptr(i)*ptrSz))
+		if tp == nil {
+			continue
+		}
+		if _, ok := visited[tp]; ok {
+			continue
+		}
+		visited[tp] = struct{}{}
+
+		tbl := (*refTableHdr)(tp)
+		n := tbl.groups.lengthMask + 1
+		if n == 0 || (n&(n-1)) != 0 {
+			t.Errorf("table %p: lengthMask+1=%d is not a non-zero power of 2 (possible struct layout drift)", tp, n)
+		}
 	}
 }
 
