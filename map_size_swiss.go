@@ -92,15 +92,19 @@ type groupsRef struct {
 // mapSize estimates the number of bytes owned by the SwissTable map's
 // internal structures.
 //
-// Group layout (from internal/runtime/maps/group.go):
+// Group layout (conceptually, from internal/runtime/maps/group.go):
 //
 //	type group struct {
 //	    ctrl  uint64               // 8 bytes: one control byte per slot
 //	    slots [8]struct{ key K; elem V }
 //	}
 //
-// SlotSize = sizeof(struct{ key K; elem V }) computed by the compiler using
-// Go's struct layout rules.
+// SlotSize is modeled as sizeof(struct{ key K; elem V }) computed by the
+// compiler using Go's usual struct layout rules. The actual runtime swissmap
+// implementation may apply additional optimizations (for example, special-
+// casing zero-sized values), so mapSize should be understood as an
+// approximation/upper bound of the bytes owned by the map rather than an
+// exact reflection of every internal optimization.
 func mapSize[K comparable, V any](m map[K]V) uintptr {
 	if m == nil {
 		return 0
