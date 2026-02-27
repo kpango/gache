@@ -33,33 +33,78 @@ package gache
 
 import "unsafe"
 
-// A header for a Go map.
+// hmap mirrors internal/runtime/maps.Map (Go 1.24+ swissmap default).
+// Keep in sync with internal/runtime/maps/map.go.
+//
+// 64-bit layout (size = 48 bytes):
+//
+//	used              uint64         offset  0
+//	seed              uintptr        offset  8
+//	dirPtr            unsafe.Pointer offset 16
+//	dirLen            int            offset 24
+//	globalDepth       uint8          offset 32
+//	globalShift       uint8          offset 33
+//	writing           uint8          offset 34
+//	tombstonePossible bool           offset 35
+//	(4 bytes implicit padding)
+//	clearSeq          uint64         offset 40
 type hmap struct {
-	count  uintptr
-	flags  uint8
-	B      uint8
-	hash0  uint32
-	dir    unsafe.Pointer
-	dirLen uintptr
+	used              uint64
+	seed              uintptr
+	dirPtr            unsafe.Pointer
+	dirLen            int
+	globalDepth       uint8
+	globalShift       uint8
+	writing           uint8
+	tombstonePossible bool
+	clearSeq          uint64
 }
 
-// A directory entry.
-type dirEntry struct {
-	table unsafe.Pointer
+// tableHdr mirrors internal/runtime/maps.table (Go 1.24+ swissmap).
+// Keep in sync with internal/runtime/maps/table.go.
+//
+// 64-bit layout (size = 32 bytes):
+//
+//	used       uint16         offset  0
+//	capacity   uint16         offset  2
+//	growthLeft uint16         offset  4
+//	localDepth uint8          offset  6
+//	(1 byte implicit padding)
+//	index      int            offset  8
+//	groups     groupsRef      offset 16
+type tableHdr struct {
+	used       uint16
+	capacity   uint16
+	growthLeft uint16
+	localDepth uint8
+	_pad       uint8 // padding to align index to 8
+	index      int
+	groups     groupsRef
 }
 
-// A table.
-type table struct {
-	groups [1]group
+// groupsRef mirrors internal/runtime/maps.groupsReference.
+// Keep in sync with internal/runtime/maps/group.go.
+type groupsRef struct {
+	data       unsafe.Pointer // *[lengthMask+1]group
+	lengthMask uint64         // numGroups - 1 (numGroups is always a power of 2)
 }
 
-// A group.
-type group struct {
-	ctrl  [8]uint8
-	slots [1]uintptr
-}
-
-// mapSize estimates the size of a SwissTable map.
+// mapSize estimates the number of bytes owned by the SwissTable map's
+// internal structures.
+//
+// Group layout (conceptually, from internal/runtime/maps/group.go):
+//
+//	type group struct {
+//	    ctrl  uint64               // 8 bytes: one control byte per slot
+//	    slots [8]struct{ key K; elem V }
+//	}
+//
+// SlotSize is modeled as sizeof(struct{ key K; elem V }) computed by the
+// compiler using Go's usual struct layout rules. The actual runtime swissmap
+// implementation may apply additional optimizations (for example, special-
+// casing zero-sized values), so mapSize should be understood as an
+// approximation/upper bound of the bytes owned by the map rather than an
+// exact reflection of every internal optimization.
 func mapSize[K comparable, V any](m map[K]V) uintptr {
 	if m == nil {
 		return 0
@@ -70,46 +115,50 @@ func mapSize[K comparable, V any](m map[K]V) uintptr {
 		return 0
 	}
 
-	var k K
-	var v V
-	keySize, keyAlign := unsafe.Sizeof(k), unsafe.Alignof(k)
-	valSize, valAlign := unsafe.Sizeof(v), unsafe.Alignof(v)
-
-	// ctrl byte + 8 slots.
-	// The values are aligned to their natural alignment.
-	// The keys are not aligned; they are just packed together.
-	// The ctrl bytes are at the beginning of the group.
-	valOffset := alignUp(keySize, valAlign)
-	slotSize := valOffset + valSize
-	if valSize == 0 {
-		// Zero-sized values take up 1 byte for the value, but the overall
-		// slot size is aligned up to the key alignment.
-		slotSize = alignUp(keySize+1, keyAlign)
+	type slot struct {
+		key  K
+		elem V
 	}
-	groupSize := 8 + 8*slotSize
+	type group struct {
+		ctrl  uint64
+		slots [8]slot
+	}
+
+	groupSize := unsafe.Sizeof(group{})
 
 	size := unsafe.Sizeof(*h)
 
 	if h.dirLen == 0 {
-		// Small map optimization.
-		if h.dir != nil {
-			// The map has a single group.
+		// Small-map optimisation: dirPtr points directly to one group.
+		if h.dirPtr != nil {
 			size += groupSize
 		}
 		return size
 	}
 
-	// Directory
+	// Large map: dirPtr is *[dirLen]*table.
+	// Account for the directory pointer array itself.
+	const ptrSize = unsafe.Sizeof(uintptr(0))
+	size += uintptr(h.dirLen) * ptrSize
+
+	// Deduplicate table pointers (directory entries may alias the same table).
 	tables := make(map[unsafe.Pointer]struct{}, h.dirLen)
-	for i := uintptr(0); i < h.dirLen; i++ {
-		entry := (*dirEntry)(unsafe.Pointer(uintptr(h.dir) + i*unsafe.Sizeof(dirEntry{})))
-		if t := entry.table; t != nil {
-			tables[t] = struct{}{}
+	for i := 0; i < h.dirLen; i++ {
+		tp := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(h.dirPtr) + uintptr(i)*ptrSize))
+		if tp != nil {
+			tables[tp] = struct{}{}
 		}
 	}
 
-	tableSize := (uintptr(1) << h.B) * groupSize
-	size += uintptr(len(tables)) * tableSize
+	tableHdrSize := unsafe.Sizeof(tableHdr{})
+	for tp := range tables {
+		t := (*tableHdr)(tp)
+		// tableHdr struct itself.
+		size += tableHdrSize
+		// Groups backing array: (lengthMask+1) groups.
+		numGroups := uintptr(t.groups.lengthMask + 1)
+		size += numGroups * groupSize
+	}
 
 	return size
 }
