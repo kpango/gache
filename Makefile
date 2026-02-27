@@ -3,8 +3,11 @@ GO_VERSION:=$(shell go version)
 .PHONY: all clean bench bench-all profile lint test contributors update install
 
 
+GO_VERSION := 1.26.0
 GOPATH := $(eval GOPATH := $(shell go env GOPATH))$(GOPATH)
 GOLINES_MAX_WIDTH     ?= 200
+
+ROOTDIR = $(eval ROOTDIR := $(or $(shell git rev-parse --show-toplevel), $(PWD)))$(ROOTDIR)
 
 all: clean install lint test bench
 
@@ -18,7 +21,23 @@ clean:
 	    bench \
 	    vendor
 
-bench: clean init
+.PHONY: deps
+## install Go package dependencies
+deps: \
+	clean \
+	init
+	head -n -1 $(ROOTDIR)/go.mod.default | awk 'NR>=6 && $$0 !~ /(upgrade|latest|master|main)/' | sort
+	sed -i "3s/go [0-9]\+\.[0-9]\+\(\.[0-9]\+\)\?/go $(GO_VERSION)/g" $(ROOTDIR)/go.mod.default
+	rm -rf $(ROOTDIR)/vendor \
+	    $(ROOTDIR)/go.sum \
+	    $(ROOTDIR)/go.mod 2>/dev/null
+	cp $(ROOTDIR)/go.mod.default $(ROOTDIR)/go.mod
+	sed -i "s/#.*//" $(ROOTDIR)/go.mod
+	GOTOOLCHAIN=go$(GO_VERSION) go mod tidy
+	GOTOOLCHAIN=go$(GO_VERSION) go get -u all 2>/dev/null || true
+	GOTOOLCHAIN=go$(GO_VERSION) go get -u ./... 2>/dev/null || true
+
+bench: deps
 	sleep 3
 	go test -count=1 -timeout=30m -run=NONE -bench . -benchmem
 
@@ -27,7 +46,7 @@ init:
 	GO111MODULE=on go mod tidy
 	go get -u ./...
 
-profile: clean init
+profile: deps
 	rm -rf bench
 	mkdir bench
 	mkdir pprof
@@ -53,7 +72,6 @@ lint:
 	gometalinter --enable-all . | rg -v comment
 
 test:
-	CGO_ENABLED=1 GO111MODULE=on GOEXPERIMENT=noswissmap go test --race -v $(go list ./... | rg -v vendor)
 	CGO_ENABLED=1 GO111MODULE=on go test --race -v $(go list ./... | rg -v vendor)
 
 contributors:

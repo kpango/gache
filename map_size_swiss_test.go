@@ -1,5 +1,3 @@
-//go:build goexperiment.swissmap
-
 package gache
 
 import (

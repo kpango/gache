@@ -38,3 +38,14 @@ func WithExpiredHookFunc[V any](f func(ctx context.Context, key string, v V)) Op
 		return nil
 	}
 }
+
+// WithMaxKeyLength sets the maximum number of bytes used from each key when
+// computing the shard ID. One-byte keys use a fast, non-hashing path; keys of
+// length 2 through 32 bytes use maphash for hashing; longer keys use xxh3. A
+// value of 0 means the full key is always used. The default is 256 bytes.
+func WithMaxKeyLength[V any](kl uint64) Option[V] {
+	return func(g *gache[V]) error {
+		g.maxKeyLength = kl
+		return nil
+	}
+}
