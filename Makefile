@@ -14,12 +14,14 @@ all: clean install lint test bench
 clean:
 	go clean ./...
 	go clean -modcache
-	rm -rf ./*.log \
-	    ./*.svg \
-	    ./go.* \
-	    pprof \
-	    bench \
-	    vendor
+	rm -rf \
+	    $(ROOTDIR)/*.log \
+	    $(ROOTDIR)/*.svg \
+	    $(ROOTDIR)/go.mod \
+	    $(ROOTDIR)/go.sum \
+	    $(ROOTDIR)/pprof \
+	    $(ROOTDIR)/bench \
+	    $(ROOTDIR)/vendor
 
 .PHONY: deps
 ## install Go package dependencies
@@ -52,7 +54,18 @@ profile: deps
 	mkdir pprof
 	\
 	# go test -count=3 -timeout=30m -run=NONE -bench=BenchmarkChangeOutAllInt_gache -benchmem -o pprof/gache-test.bin -cpuprofile pprof/cpu-gache.out -memprofile pprof/mem-gache.out
-	go test -count=3 -timeout=30m -run=NONE -bench=BenchmarkGacheSetBigDataWithTTL -benchmem -o pprof/gache-test.bin -cpuprofile pprof/cpu-gache.out -memprofile pprof/mem-gache.out
+	go test -count=3 -timeout=30m -run=NONE -bench=BenchmarkGache -benchmem -o pprof/gache-test.bin -cpuprofile pprof/cpu-gache.out -memprofile pprof/mem-gache.out
+	go tool pprof --svg pprof/gache-test.bin pprof/cpu-gache.out > cpu-gache.svg
+	go tool pprof --svg pprof/gache-test.bin pprof/mem-gache.out > mem-gache.svg
+	\
+	mv ./*.svg bench/
+
+profile-gache: deps
+	rm -rf bench
+	mkdir bench
+	mkdir pprof
+	\
+	go test -count=3 -timeout=30m -run=NONE -bench=BenchmarkGache -benchmem -o pprof/gache-test.bin -cpuprofile pprof/cpu-gache.out -memprofile pprof/mem-gache.out
 	go tool pprof --svg pprof/gache-test.bin pprof/cpu-gache.out > cpu-gache.svg
 	go tool pprof --svg pprof/gache-test.bin pprof/mem-gache.out > mem-gache.svg
 	\
