@@ -157,6 +157,34 @@ func TestSwissInternals_SanityChecks(t *testing.T) {
 		t.Errorf("refGroupsRef size=%d != groupsRef size=%d — test and production mirrors diverged", got, want)
 	}
 
+	// --- 1b. Critical field-offset parity ---
+	// Ensure that the offsets of the fields we read via unsafe casts have not drifted.
+	var refH refHmap
+	var prodH hmap
+	if offRef, offProd := unsafe.Offsetof(refH.dirPtr), unsafe.Offsetof(prodH.dirPtr); offRef != offProd {
+		t.Errorf("refHmap.dirPtr offset=%d != hmap.dirPtr offset=%d — struct layout drifted", offRef, offProd)
+	}
+	if offRef, offProd := unsafe.Offsetof(refH.dirLen), unsafe.Offsetof(prodH.dirLen); offRef != offProd {
+		t.Errorf("refHmap.dirLen offset=%d != hmap.dirLen offset=%d — struct layout drifted", offRef, offProd)
+	}
+	if offRef, offProd := unsafe.Offsetof(refH.clearSeq), unsafe.Offsetof(prodH.clearSeq); offRef != offProd {
+		t.Errorf("refHmap.clearSeq offset=%d != hmap.clearSeq offset=%d — struct layout drifted", offRef, offProd)
+	}
+
+	var refT refTableHdr
+	var prodT tableHdr
+	if offRef, offProd := unsafe.Offsetof(refT.groups), unsafe.Offsetof(prodT.groups); offRef != offProd {
+		t.Errorf("refTableHdr.groups offset=%d != tableHdr.groups offset=%d — struct layout drifted", offRef, offProd)
+	}
+
+	var refG refGroupsRef
+	var prodG groupsRef
+	if offRef, offProd := unsafe.Offsetof(refG.data), unsafe.Offsetof(prodG.data); offRef != offProd {
+		t.Errorf("refGroupsRef.data offset=%d != groupsRef.data offset=%d — struct layout drifted", offRef, offProd)
+	}
+	if offRef, offProd := unsafe.Offsetof(refG.lengthMask), unsafe.Offsetof(prodG.lengthMask); offRef != offProd {
+		t.Errorf("refGroupsRef.lengthMask offset=%d != groupsRef.lengthMask offset=%d — struct layout drifted", offRef, offProd)
+	}
 	// --- 2. Hand-derived group size for map[int]int ---
 	var iZero int
 	slotBytes := 2 * unsafe.Sizeof(iZero) // key int + elem int, no padding needed
