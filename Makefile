@@ -53,7 +53,6 @@ lint:
 	gometalinter --enable-all . | rg -v comment
 
 test:
-	CGO_ENABLED=1 GO111MODULE=on GOEXPERIMENT=noswissmap go test --race -v $(go list ./... | rg -v vendor)
 	CGO_ENABLED=1 GO111MODULE=on go test --race -v $(go list ./... | rg -v vendor)
 
 contributors:

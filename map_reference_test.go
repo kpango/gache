@@ -29,6 +29,7 @@
 package gache_test
 
 import (
+	"maps"
 	"sync"
 	"sync/atomic"
 )
@@ -285,8 +286,6 @@ func (m *DeepCopyMap) Range(f func(key, value any) (shouldContinue bool)) {
 func (m *DeepCopyMap) dirty() map[any]any {
 	clean, _ := m.clean.Load().(map[any]any)
 	dirty := make(map[any]any, len(clean)+1)
-	for k, v := range clean {
-		dirty[k] = v
-	}
+	maps.Copy(dirty, clean)
 	return dirty
 }
