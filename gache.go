@@ -56,6 +56,7 @@ type (
 		cancel         atomic.Pointer[context.CancelFunc]
 		expChan        chan keyValue[V]
 		expFunc        func(context.Context, string, V)
+		valPool        *sync.Pool
 		expFuncEnabled bool
 		expire         int64
 		l              uint64
@@ -94,6 +95,11 @@ var hashSeed = maphash.MakeSeed()
 // New returns Gache (*gache) instance
 func New[V any](opts ...Option[V]) Gache[V] {
 	g := new(gache[V])
+	g.valPool = &sync.Pool{
+		New: func() any {
+			return new(value[V])
+		},
+	}
 	for _, opt := range append([]Option[V]{
 		WithDefaultExpiration[V](30 * time.Second),
 		WithMaxKeyLength[V](256),
@@ -252,12 +258,14 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 		expire = fastime.UnixNanoNow() + expire
 	}
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
-	_, loaded := shard.Swap(key, &value[V]{
-		expire: expire,
-		val:    val,
-	})
+	newVal := g.valPool.Get().(*value[V])
+	newVal.val = val
+	newVal.expire = expire
+	old, loaded := shard.Swap(key, newVal)
 	if !loaded {
 		atomic.AddUint64(&g.l, 1)
+	} else {
+		g.valPool.Put(old)
 	}
 }
 
@@ -277,9 +285,9 @@ func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 	val, loaded = g.shards[getShardID(key, g.maxKeyLength)].LoadAndDelete(key)
 	if loaded {
 		atomic.AddUint64(&g.l, ^uint64(0))
-	}
-	if val != nil && loaded {
-		return val.val, loaded
+		v = val.val
+		g.valPool.Put(val)
+		return v, loaded
 	}
 	return v, loaded
 }
@@ -418,13 +426,15 @@ func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
 			return
 		}
 
-		newVal := &value[V]{
-			val:    val.val,
-			expire: val.expire + int64(addExp),
-		}
+		newVal := g.valPool.Get().(*value[V])
+		newVal.val = val.val
+		newVal.expire = val.expire + int64(addExp)
+
 		if shard.CompareAndSwap(key, val, newVal) {
+			g.valPool.Put(val)
 			return
 		}
+		g.valPool.Put(newVal)
 	}
 }
 
@@ -446,13 +456,15 @@ func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool)
 			return v, false
 		}
 
-		newVal := &value[V]{
-			val:    val.val,
-			expire: fastime.UnixNanoNow() + int64(d),
-		}
+		newVal := g.valPool.Get().(*value[V])
+		newVal.val = val.val
+		newVal.expire = fastime.UnixNanoNow() + int64(d)
+
 		if shard.CompareAndSwap(key, val, newVal) {
+			g.valPool.Put(val)
 			return newVal.val, true
 		}
+		g.valPool.Put(newVal)
 	}
 }
 
@@ -485,11 +497,13 @@ func (g *gache[V]) Pop(key string) (v V, ok bool) {
 		return v, false
 	}
 	atomic.AddUint64(&g.l, ^uint64(0))
+	v = val.val
+	g.valPool.Put(val)
 	if val.isValid() {
-		return val.val, true
+		return v, true
 	}
 	if g.expFuncEnabled {
-		g.expChan <- keyValue[V]{key: key, value: val.val}
+		g.expChan <- keyValue[V]{key: key, value: v}
 	}
 	return v, false
 }
@@ -506,10 +520,9 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 		exp += fastime.UnixNanoNow()
 	}
 
-	newVal := &value[V]{
-		val:    val,
-		expire: exp,
-	}
+	newVal := g.valPool.Get().(*value[V])
+	newVal.val = val
+	newVal.expire = exp
 
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
 	for {
@@ -519,12 +532,20 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 			return
 		}
 
+		// loaded: actual is the existing value (*value[V])
+
 		if actual.isValid() {
+			// New value not used
+			g.valPool.Put(newVal)
 			return
 		}
 
+		// actual is expired. Replace it.
 		if shard.CompareAndSwap(key, actual, newVal) {
+			// We replaced actual with newVal.
+			g.valPool.Put(actual)
 			return
 		}
+		// CAS failed, loop again.
 	}
 }
