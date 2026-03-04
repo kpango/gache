@@ -6,11 +6,19 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body, '/') }}
+    if: ${{ github.event.issue.pull_request
+      && (github.event.comment.author_association == 'OWNER'
+        || github.event.comment.author_association == 'MEMBER'
+        || github.event.comment.author_association == 'COLLABORATOR')
+      && (startsWith(github.event.comment.body, '/format')
+        || startsWith(github.event.comment.body, '/test')
+        || startsWith(github.event.comment.body, '/bench')
+        || startsWith(github.event.comment.body, '/profile')) }}
     steps:
       - name: Extract command
         id: command
@@ -37,7 +45,7 @@ jobs:
             }
 
       - name: Checkout PR Branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ fromJSON(steps.pr-info.outputs.result).head.repo.full_name }}
           ref: ${{ fromJSON(steps.pr-info.outputs.result).head.ref }}
@@ -48,7 +56,7 @@ jobs:
         run: echo "go-version=$(grep -o 'go [0-9]\+\.[0-9]\+' go.mod | cut -d ' ' -f 2)" >> $GITHUB_OUTPUT
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ steps.go-version.outputs.go-version }}
 
@@ -71,11 +79,8 @@ jobs:
 
       - name: Push /format
         if: steps.command.outputs.command == '/format'
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ fromJSON(steps.pr-info.outputs.result).head.ref }}
-          repository: ${{ fromJSON(steps.pr-info.outputs.result).head.repo.full_name }}
+        run: |
+          git push origin HEAD:${{ fromJSON(steps.pr-info.outputs.result).head.ref }}
 
       - name: Process /test
         if: steps.command.outputs.command == '/test'
@@ -111,7 +116,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add -f bench/*.svg
+          if [ -d bench ] && compgen -G 'bench/*.svg' > /dev/null; then
+            git add -f bench/*.svg
+          else
+            echo "No SVG profile files generated; skipping git add"
+          fi
           git commit -m "chore: add profile svgs from chatops" || echo "No changes to commit"
 
           COMMIT_SHA=$(git rev-parse HEAD)
@@ -125,15 +134,17 @@ jobs:
 
           **Memory Profile:**
           https://raw.githubusercontent.com/$REPO/$COMMIT_SHA/bench/mem-gache.svg
+
+          **Output:**
+          \`\`\`
           COMMENTEOF
+          cat profile_output.txt >> comment.txt
+          echo '```' >> comment.txt
 
       - name: Push /profile
         if: steps.command.outputs.command == '/profile'
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ fromJSON(steps.pr-info.outputs.result).head.ref }}
-          repository: ${{ fromJSON(steps.pr-info.outputs.result).head.repo.full_name }}
+        run: |
+          git push origin HEAD:${{ fromJSON(steps.pr-info.outputs.result).head.ref }}
 
       - name: Post Comment
         if: steps.command.outputs.command == '/test' || steps.command.outputs.command == '/bench' || steps.command.outputs.command == '/profile'
