@@ -94,16 +94,13 @@ go get github.com/kpango/gache/v2
 	// WithDefaultExpiration sets the default expiration time for keys.
 	// WithMaxKeyLength limits the max bytes of the key used to compute the shard ID.
 	// StartExpired runs a background job that periodically removes expired items.
+	// Set the expired hook function and enable it before starting the expiration daemon
 	gch := gache.New(
 		gache.WithDefaultExpiration[string](time.Minute),
 		gache.WithMaxKeyLength[string](256),
-	).StartExpired(context.Background(), time.Second*10)
-
-	// Enable an expiration hook to receive events when an item expires
-	gch.EnableExpiredHook().SetExpiredHook(func(ctx context.Context, key string, v string) {
+	).SetExpiredHook(func(ctx context.Context, key string, v string) {
 		fmt.Printf("Item expired: key=%s value=%s\n", key, v)
-	})
-
+	}).EnableExpiredHook().StartExpired(context.Background(), time.Second*10)
 	// Store an item only if it does not already exist
 	gch.SetIfNotExists("key4", "value4")
 
