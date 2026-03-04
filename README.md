@@ -90,6 +90,40 @@ go get github.com/kpango/gache/v2
 		return true
 	})
 
+	// Optional configurations
+	// WithDefaultExpiration sets the default expiration time for keys.
+	// WithMaxKeyLength limits the max bytes of the key used to compute the shard ID.
+	// StartExpired runs a background job that periodically removes expired items.
+	// Set the expired hook function and enable it before starting the expiration daemon
+	gch := gache.New(
+		gache.WithDefaultExpiration[string](time.Minute),
+		gache.WithMaxKeyLength[string](256),
+	).SetExpiredHook(func(ctx context.Context, key string, v string) {
+		fmt.Printf("Item expired: key=%s value=%s\n", key, v)
+	}).EnableExpiredHook().StartExpired(context.Background(), time.Second*10)
+	// Store an item only if it does not already exist
+	gch.SetIfNotExists("key4", "value4")
+
+	// Extend the expiration time of an existing item
+	gch.ExtendExpire("key4", time.Minute*5)
+
+	// Read a value and refresh its expiration duration
+	v7, ok := gch.GetRefresh("key4")
+
+	// Retrieve a value regardless of its expiration state
+	v8, ok := gch.GetWithIgnoredExpire("key4")
+
+	// Retrieve a value and remove it from the cache
+	v9, ok := gch.Pop("key4")
+
+	// Get all keys currently in the cache
+	keys := gch.Keys(context.Background())
+
+	// Clear the entire cache
+	gch.Clear()
+
+	// Stop the background expiration job
+	gch.Stop()
 ```
 ## Benchmarks
 Benchmark results are shown below and benchmarked in [this](https://github.com/kpango/go-cache-lib-benchmarks) repository
