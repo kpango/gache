@@ -30,7 +30,6 @@
 package gache
 
 import (
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -121,9 +120,9 @@ func (m *Map[K, V]) Clear() {
 // tryCompareAndSwap uses reflect.DeepEqual for equality to support non-comparable
 // types (e.g. slices, maps) since Map has a V any constraint. This trades a small
 // performance overhead for correctness and safety.
-func (e *entry[V]) tryCompareAndSwap(old, new V) (ok bool) {
+func (e *entry[V]) tryCompareAndSwap(oldp *V, new V) (ok bool) {
 	p := e.p.Load()
-	if p == nil || p == e.expunged || !reflect.DeepEqual(*p, old) {
+	if p == nil || p == e.expunged || p != oldp {
 		return false
 	}
 
@@ -133,7 +132,7 @@ func (e *entry[V]) tryCompareAndSwap(old, new V) (ok bool) {
 			return true
 		}
 		p = e.p.Load()
-		if p == nil || p == e.expunged || !reflect.DeepEqual(*p, old) {
+		if p == nil || p == e.expunged || p != oldp {
 			return false
 		}
 	}
@@ -311,7 +310,7 @@ func (m *Map[K, V]) Swap(key K, value V) (previous V, loaded bool) {
 func (m *Map[K, V]) CompareAndSwap(key K, old, new V) (swapped bool) {
 	read := m.loadReadOnly()
 	if e, ok := read.m[key]; ok {
-		return e.tryCompareAndSwap(old, new)
+		return e.tryCompareAndSwap(&old, new)
 	} else if !read.amended {
 		return false
 	}
@@ -321,9 +320,9 @@ func (m *Map[K, V]) CompareAndSwap(key K, old, new V) (swapped bool) {
 	read = m.loadReadOnly()
 	swapped = false
 	if e, ok := read.m[key]; ok {
-		swapped = e.tryCompareAndSwap(old, new)
+		swapped = e.tryCompareAndSwap(&old, new)
 	} else if e, ok := m.dirty[key]; ok {
-		swapped = e.tryCompareAndSwap(old, new)
+		swapped = e.tryCompareAndSwap(&old, new)
 		m.missLocked()
 	}
 	return swapped
@@ -344,7 +343,7 @@ func (m *Map[K, V]) CompareAndDelete(key K, old V) (deleted bool) {
 	}
 	for ok {
 		p := e.p.Load()
-		if p == nil || p == e.expunged || !reflect.DeepEqual(*p, old) {
+		if p == nil || p == e.expunged || p != &old {
 			return false
 		}
 		if e.p.CompareAndSwap(p, nil) {
