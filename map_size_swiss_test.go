@@ -123,7 +123,7 @@ func expectedSizeFromSwissInternals[K comparable, V any](m map[K]V) uintptr {
 // there is no single oldbuckets pointer to check; instead we just iterate a
 // few times to drain pending work.
 func nudgeSwissGrowth[K comparable, V any](m map[K]V) {
-	for pass := 0; pass < 4; pass++ {
+	for range 4 {
 		for k := range m {
 			_ = m[k]
 		}
@@ -194,7 +194,7 @@ func TestSwissInternals_SanityChecks(t *testing.T) {
 
 	// --- 3. Power-of-2 invariant for lengthMask+1 ---
 	m := make(map[int]int)
-	for i := 0; i < 1024; i++ {
+	for i := range 1024 {
 		m[i] = i
 	}
 	nudgeSwissGrowth[int, int](m)
@@ -285,7 +285,7 @@ func TestMapSizeSwiss_SmallMap_DirectGroup(t *testing.T) {
 	t.Parallel()
 
 	m := make(map[int]int)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		m[i] = i
 	}
 
@@ -309,7 +309,7 @@ func TestMapSizeSwiss_LargeMap_DirectoryCreated(t *testing.T) {
 	const N = 1 << 13 // 8192 — well above any single-table capacity threshold
 
 	m := make(map[int]int, N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		m[i] = i
 	}
 	nudgeSwissGrowth[int, int](m)
@@ -363,7 +363,7 @@ func TestMapSizeSwiss_LargeMap_TableDedup(t *testing.T) {
 	const N = 1 << 13
 
 	m := make(map[int]int, N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		m[i] = i
 	}
 	nudgeSwissGrowth[int, int](m)
@@ -407,7 +407,7 @@ func TestMapSizeSwiss_LargeMap_ZeroSizedValue(t *testing.T) {
 	const N = 1 << 13
 
 	m := make(map[int]struct{}, N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		m[i] = struct{}{}
 	}
 	nudgeSwissGrowth[int, struct{}](m)
@@ -433,7 +433,7 @@ func TestMapSizeSwiss_LargeMap_StringValueIndependence(t *testing.T) {
 	const N = 1 << 13
 
 	m := make(map[int]string, N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		m[i] = "x"
 	}
 	nudgeSwissGrowth[int, string](m)
@@ -452,7 +452,7 @@ func TestMapSizeSwiss_LargeMap_StringValueIndependence(t *testing.T) {
 
 	// Replace all values with a large shared backing string (~1 MiB).
 	long := string(make([]byte, 1<<20))
-	for i := 0; i < N; i++ {
+	for i := range N {
 		m[i] = long
 	}
 	nudgeSwissGrowth[int, string](m)

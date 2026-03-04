@@ -35,26 +35,26 @@ import (
 	"unsafe"
 )
 
-type Map[K, V comparable] struct {
+type Map[K comparable, V any] struct {
 	mu     sync.RWMutex
 	read   atomic.Pointer[readOnly[K, V]]
 	dirty  map[K]*entry[V]
 	misses int
 }
 
-type readOnly[K, V comparable] struct {
+type readOnly[K comparable, V any] struct {
 	m       map[K]*entry[V]
 	amended bool
 }
 
-type entry[V comparable] struct {
-	expunged atomic.Pointer[V]
+type entry[V any] struct {
+	expunged *V
 	p        atomic.Pointer[V]
 }
 
-func newEntry[V comparable](v V) (e *entry[V]) {
+func newEntry[V any](v V) (e *entry[V]) {
 	e = &entry[V]{}
-	e.expunged.Store(new(V))
+	e.expunged = new(V)
 	e.p.Store(&v)
 	return e
 }
@@ -87,7 +87,7 @@ func (m *Map[K, V]) Load(key K) (value V, ok bool) {
 
 func (e *entry[V]) load() (value V, ok bool) {
 	p := e.p.Load()
-	if p == nil || p == e.expunged.Load() {
+	if p == nil || p == e.expunged {
 		return value, false
 	}
 	return *p, true
@@ -117,9 +117,12 @@ func (m *Map[K, V]) Clear() {
 	m.misses = 0
 }
 
-func (e *entry[V]) tryCompareAndSwap(old, new V) (ok bool) {
+// tryCompareAndSwap uses reflect.DeepEqual for equality to support non-comparable
+// types (e.g. slices, maps) since Map has a V any constraint. This trades a small
+// performance overhead for correctness and safety.
+func (e *entry[V]) tryCompareAndSwap(oldp *V, new V) (ok bool) {
 	p := e.p.Load()
-	if p == nil || p == e.expunged.Load() || *p != old {
+	if p == nil || p == e.expunged || p != oldp {
 		return false
 	}
 
@@ -129,14 +132,14 @@ func (e *entry[V]) tryCompareAndSwap(old, new V) (ok bool) {
 			return true
 		}
 		p = e.p.Load()
-		if p == nil || p == e.expunged.Load() || *p != old {
+		if p == nil || p == e.expunged || p != oldp {
 			return false
 		}
 	}
 }
 
 func (e *entry[V]) unexpungeLocked() (wasExpunged bool) {
-	return e.p.CompareAndSwap(e.expunged.Load(), nil)
+	return e.p.CompareAndSwap(e.expunged, nil)
 }
 
 func (e *entry[V]) swapLocked(i *V) (v *V) {
@@ -144,6 +147,14 @@ func (e *entry[V]) swapLocked(i *V) (v *V) {
 }
 
 func (m *Map[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
+	val, loaded := m.LoadOrStorePtr(key, value)
+	if val != nil {
+		return *val, loaded
+	}
+	return actual, loaded
+}
+
+func (m *Map[K, V]) LoadOrStorePtr(key K, value V) (actual *V, loaded bool) {
 	read := m.loadReadOnly()
 	if e, ok := read.m[key]; ok {
 		actual, loaded, ok := e.tryLoadOrStore(value)
@@ -173,33 +184,34 @@ func (m *Map[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
 		if m.dirty == nil {
 			m.initDirty(len(read.m))
 		}
-		m.dirty[key] = newEntry(value)
-		actual, loaded = value, false
+		ne := newEntry(value)
+		m.dirty[key] = ne
+		actual, loaded = ne.p.Load(), false
 	}
 	m.mu.Unlock()
 	return actual, loaded
 }
 
-func (e *entry[V]) tryLoadOrStore(i V) (actual V, loaded, ok bool) {
+func (e *entry[V]) tryLoadOrStore(i V) (actual *V, loaded, ok bool) {
 	p := e.p.Load()
-	if p == e.expunged.Load() {
-		return actual, false, false
+	if p == e.expunged {
+		return nil, false, false
 	}
 	if p != nil {
-		return *p, true, true
+		return p, true, true
 	}
 
 	ic := i
 	for {
 		if e.p.CompareAndSwap(nil, &ic) {
-			return i, false, true
+			return &ic, false, true
 		}
 		p = e.p.Load()
-		if p == e.expunged.Load() {
-			return actual, false, false
+		if p == e.expunged {
+			return nil, false, false
 		}
 		if p != nil {
-			return *p, true, true
+			return p, true, true
 		}
 	}
 }
@@ -231,7 +243,7 @@ func (m *Map[K, V]) Delete(key K) {
 func (e *entry[V]) delete() (value V, ok bool) {
 	for {
 		p := e.p.Load()
-		if p == nil || p == e.expunged.Load() {
+		if p == nil || p == e.expunged {
 			return value, false
 		}
 		if e.p.CompareAndSwap(p, nil) {
@@ -243,7 +255,7 @@ func (e *entry[V]) delete() (value V, ok bool) {
 func (e *entry[V]) trySwap(i *V) (v *V, ok bool) {
 	for {
 		p := e.p.Load()
-		if p == e.expunged.Load() {
+		if p == e.expunged {
 			return nil, false
 		}
 		if e.p.CompareAndSwap(p, i) {
@@ -298,7 +310,7 @@ func (m *Map[K, V]) Swap(key K, value V) (previous V, loaded bool) {
 func (m *Map[K, V]) CompareAndSwap(key K, old, new V) (swapped bool) {
 	read := m.loadReadOnly()
 	if e, ok := read.m[key]; ok {
-		return e.tryCompareAndSwap(old, new)
+		return e.tryCompareAndSwap(&old, new)
 	} else if !read.amended {
 		return false
 	}
@@ -308,9 +320,9 @@ func (m *Map[K, V]) CompareAndSwap(key K, old, new V) (swapped bool) {
 	read = m.loadReadOnly()
 	swapped = false
 	if e, ok := read.m[key]; ok {
-		swapped = e.tryCompareAndSwap(old, new)
+		swapped = e.tryCompareAndSwap(&old, new)
 	} else if e, ok := m.dirty[key]; ok {
-		swapped = e.tryCompareAndSwap(old, new)
+		swapped = e.tryCompareAndSwap(&old, new)
 		m.missLocked()
 	}
 	return swapped
@@ -331,7 +343,7 @@ func (m *Map[K, V]) CompareAndDelete(key K, old V) (deleted bool) {
 	}
 	for ok {
 		p := e.p.Load()
-		if p == nil || p == e.expunged.Load() || *p != old {
+		if p == nil || p == e.expunged || p != &old {
 			return false
 		}
 		if e.p.CompareAndSwap(p, nil) {
@@ -398,12 +410,12 @@ func (m *Map[K, V]) initDirty(size int) {
 func (e *entry[V]) tryExpungeLocked() (isExpunged bool) {
 	p := e.p.Load()
 	for p == nil {
-		if e.p.CompareAndSwap(nil, e.expunged.Load()) {
+		if e.p.CompareAndSwap(nil, e.expunged) {
 			return true
 		}
 		p = e.p.Load()
 	}
-	return p == e.expunged.Load()
+	return p == e.expunged
 }
 
 func (m *Map[K, V]) Len() int {
@@ -447,10 +459,10 @@ func (e *entry[V]) Size() (size uintptr) {
 	if e == nil {
 		return 0
 	}
-	size = unsafe.Sizeof(e.expunged) // atomic.Pointer[V]
+	size = unsafe.Sizeof(e.expunged) // *V
 	size += unsafe.Sizeof(e.p)       // atomic.Pointer[V]
 
-	if ee := e.expunged.Load(); ee != nil {
+	if ee := e.expunged; ee != nil {
 		size += unsafe.Sizeof(*ee) // V
 	}
 	if ep := e.p.Load(); ep != nil {

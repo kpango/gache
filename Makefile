@@ -1,24 +1,42 @@
-GO_VERSION:=$(shell go version)
-
-.PHONY: all clean bench bench-all profile lint test contributors update install
-
-
+GO_VERSION := 1.26.0
 GOPATH := $(eval GOPATH := $(shell go env GOPATH))$(GOPATH)
 GOLINES_MAX_WIDTH     ?= 200
+
+ROOTDIR = $(eval ROOTDIR := $(or $(shell git rev-parse --show-toplevel), $(PWD)))$(ROOTDIR)
+
+.PHONY: all clean bench bench-all profile lint test contributors update install
 
 all: clean install lint test bench
 
 clean:
 	go clean ./...
 	go clean -modcache
-	rm -rf ./*.log \
-	    ./*.svg \
-	    ./go.* \
-	    pprof \
-	    bench \
-	    vendor
+	rm -rf \
+	    $(ROOTDIR)/*.log \
+	    $(ROOTDIR)/*.svg \
+	    $(ROOTDIR)/go.mod \
+	    $(ROOTDIR)/go.sum \
+	    $(ROOTDIR)/pprof \
+	    $(ROOTDIR)/bench \
+	    $(ROOTDIR)/vendor
 
-bench: clean init
+.PHONY: deps
+## install Go package dependencies
+deps: \
+	clean \
+	init
+	head -n -1 $(ROOTDIR)/go.mod.default | awk 'NR>=6 && $$0 !~ /(upgrade|latest|master|main)/' | sort
+	rm -rf $(ROOTDIR)/vendor \
+	    $(ROOTDIR)/go.sum \
+	    $(ROOTDIR)/go.mod 2>/dev/null
+	cp $(ROOTDIR)/go.mod.default $(ROOTDIR)/go.mod
+	sed -E "s/^go [0-9]+\.[0-9]+(\.[0-9]+)?/go $(GO_VERSION)/; s/#.*//" $(ROOTDIR)/go.mod > $(ROOTDIR)/go.mod.tmp
+	mv $(ROOTDIR)/go.mod.tmp $(ROOTDIR)/go.mod
+	GOTOOLCHAIN=go$(GO_VERSION) go mod tidy
+	GOTOOLCHAIN=go$(GO_VERSION) go get -u all 2>/dev/null || true
+	GOTOOLCHAIN=go$(GO_VERSION) go get -u ./... 2>/dev/null || true
+
+bench: deps
 	sleep 3
 	go test -count=1 -timeout=30m -run=NONE -bench . -benchmem
 
@@ -27,13 +45,24 @@ init:
 	GO111MODULE=on go mod tidy
 	go get -u ./...
 
-profile: clean init
+profile: deps
 	rm -rf bench
 	mkdir bench
 	mkdir pprof
 	\
 	# go test -count=3 -timeout=30m -run=NONE -bench=BenchmarkChangeOutAllInt_gache -benchmem -o pprof/gache-test.bin -cpuprofile pprof/cpu-gache.out -memprofile pprof/mem-gache.out
-	go test -count=3 -timeout=30m -run=NONE -bench=BenchmarkGacheSetBigDataWithTTL -benchmem -o pprof/gache-test.bin -cpuprofile pprof/cpu-gache.out -memprofile pprof/mem-gache.out
+	go test -count=3 -timeout=30m -run=NONE -bench=BenchmarkGache -benchmem -o pprof/gache-test.bin -cpuprofile pprof/cpu-gache.out -memprofile pprof/mem-gache.out
+	go tool pprof --svg pprof/gache-test.bin pprof/cpu-gache.out > cpu-gache.svg
+	go tool pprof --svg pprof/gache-test.bin pprof/mem-gache.out > mem-gache.svg
+	\
+	mv ./*.svg bench/
+
+profile-gache: deps
+	rm -rf bench
+	mkdir bench
+	mkdir pprof
+	\
+	go test -count=3 -timeout=30m -run=NONE -bench=BenchmarkGache -benchmem -o pprof/gache-test.bin -cpuprofile pprof/cpu-gache.out -memprofile pprof/mem-gache.out
 	go tool pprof --svg pprof/gache-test.bin pprof/cpu-gache.out > cpu-gache.svg
 	go tool pprof --svg pprof/gache-test.bin pprof/mem-gache.out > mem-gache.svg
 	\
