@@ -140,6 +140,14 @@ func (v *value[V]) isValid() (valid bool) {
 	return v.expire <= 0 || fastime.UnixNanoNow() <= v.expire
 }
 
+// reset zeros out all fields to prevent memory leaks from retained references
+// when the value object is returned to the pool for reuse.
+func (v *value[V]) reset() {
+	var zero V
+	v.val = zero
+	v.expire = 0
+}
+
 // SetDefaultExpire set expire duration
 func (g *gache[V]) SetDefaultExpire(ex time.Duration) Gache[V] {
 	atomic.StoreInt64(&g.expire, *(*int64)(unsafe.Pointer(&ex)))
@@ -265,6 +273,7 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	if !loaded {
 		atomic.AddUint64(&g.l, 1)
 	} else {
+		old.reset()
 		g.valPool.Put(old)
 	}
 }
@@ -286,6 +295,7 @@ func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 	if loaded {
 		atomic.AddUint64(&g.l, ^uint64(0))
 		v = val.val
+		val.reset()
 		g.valPool.Put(val)
 		return v, loaded
 	}
@@ -431,9 +441,11 @@ func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
 		newVal.expire = val.expire + int64(addExp)
 
 		if shard.CompareAndSwap(key, val, newVal) {
+			val.reset()
 			g.valPool.Put(val)
 			return
 		}
+		newVal.reset()
 		g.valPool.Put(newVal)
 	}
 }
@@ -461,9 +473,11 @@ func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool)
 		newVal.expire = fastime.UnixNanoNow() + int64(d)
 
 		if shard.CompareAndSwap(key, val, newVal) {
+			val.reset()
 			g.valPool.Put(val)
 			return newVal.val, true
 		}
+		newVal.reset()
 		g.valPool.Put(newVal)
 	}
 }
@@ -498,8 +512,10 @@ func (g *gache[V]) Pop(key string) (v V, ok bool) {
 	}
 	atomic.AddUint64(&g.l, ^uint64(0))
 	v = val.val
+	valid := val.isValid()
+	val.reset()
 	g.valPool.Put(val)
-	if val.isValid() {
+	if valid {
 		return v, true
 	}
 	if g.expFuncEnabled {
@@ -536,6 +552,7 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 
 		if actual.isValid() {
 			// New value not used
+			newVal.reset()
 			g.valPool.Put(newVal)
 			return
 		}
@@ -543,6 +560,7 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 		// actual is expired. Replace it.
 		if shard.CompareAndSwap(key, actual, newVal) {
 			// We replaced actual with newVal.
+			actual.reset()
 			g.valPool.Put(actual)
 			return
 		}
