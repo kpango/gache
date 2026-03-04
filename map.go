@@ -462,7 +462,7 @@ func (e *entry[V]) Size() (size uintptr) {
 	}
 	size += unsafe.Sizeof(e.p) // atomic.Pointer[V]
 
-	if ep := e.p.Load(); ep != nil {
+	if ep := e.p.Load(); ep != nil && ep != (*V)(expunged) {
 		size += unsafe.Sizeof(*ep) // V
 	}
 	return size
