@@ -165,5 +165,6 @@ ok  	github.com/kpango/go-cache-lib-benchmarks	134.203s
 ## LICENSE
 gache released under MIT license, refer [LICENSE](https://github.com/kpango/gache/blob/main/LICENSE) file.
 
+The Go Gopher character is licensed under the Creative Commons 4.0 Attribution license. The image was originally created by Renee French.
 
 [![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Fkpango%2Fgache.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2Fkpango%2Fgache?ref=badge_large)
