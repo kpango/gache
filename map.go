@@ -30,6 +30,7 @@
 package gache
 
 import (
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -47,14 +48,14 @@ type readOnly[K comparable, V any] struct {
 	amended bool
 }
 
+var expunged = unsafe.Pointer(new(any))
+
 type entry[V any] struct {
-	expunged *V
-	p        atomic.Pointer[V]
+	p atomic.Pointer[V]
 }
 
 func newEntry[V any](v V) (e *entry[V]) {
 	e = &entry[V]{}
-	e.expunged = new(V)
 	e.p.Store(&v)
 	return e
 }
@@ -87,7 +88,7 @@ func (m *Map[K, V]) Load(key K) (value V, ok bool) {
 
 func (e *entry[V]) load() (value V, ok bool) {
 	p := e.p.Load()
-	if p == nil || p == e.expunged {
+	if p == nil || p == (*V)(expunged) {
 		return value, false
 	}
 	return *p, true
@@ -122,7 +123,7 @@ func (m *Map[K, V]) Clear() {
 // performance overhead for correctness and safety.
 func (e *entry[V]) tryCompareAndSwap(oldp *V, new V) (ok bool) {
 	p := e.p.Load()
-	if p == nil || p == e.expunged || p != oldp {
+	if p == nil || p == (*V)(expunged) || !reflect.DeepEqual(*p, *oldp) {
 		return false
 	}
 
@@ -132,14 +133,14 @@ func (e *entry[V]) tryCompareAndSwap(oldp *V, new V) (ok bool) {
 			return true
 		}
 		p = e.p.Load()
-		if p == nil || p == e.expunged || p != oldp {
+		if p == nil || p == (*V)(expunged) || !reflect.DeepEqual(*p, *oldp) {
 			return false
 		}
 	}
 }
 
 func (e *entry[V]) unexpungeLocked() (wasExpunged bool) {
-	return e.p.CompareAndSwap(e.expunged, nil)
+	return e.p.CompareAndSwap((*V)(expunged), nil)
 }
 
 func (e *entry[V]) swapLocked(i *V) (v *V) {
@@ -194,7 +195,7 @@ func (m *Map[K, V]) LoadOrStorePtr(key K, value V) (actual *V, loaded bool) {
 
 func (e *entry[V]) tryLoadOrStore(i V) (actual *V, loaded, ok bool) {
 	p := e.p.Load()
-	if p == e.expunged {
+	if p == (*V)(expunged) {
 		return nil, false, false
 	}
 	if p != nil {
@@ -207,7 +208,7 @@ func (e *entry[V]) tryLoadOrStore(i V) (actual *V, loaded, ok bool) {
 			return &ic, false, true
 		}
 		p = e.p.Load()
-		if p == e.expunged {
+		if p == (*V)(expunged) {
 			return nil, false, false
 		}
 		if p != nil {
@@ -243,7 +244,7 @@ func (m *Map[K, V]) Delete(key K) {
 func (e *entry[V]) delete() (value V, ok bool) {
 	for {
 		p := e.p.Load()
-		if p == nil || p == e.expunged {
+		if p == nil || p == (*V)(expunged) {
 			return value, false
 		}
 		if e.p.CompareAndSwap(p, nil) {
@@ -255,7 +256,7 @@ func (e *entry[V]) delete() (value V, ok bool) {
 func (e *entry[V]) trySwap(i *V) (v *V, ok bool) {
 	for {
 		p := e.p.Load()
-		if p == e.expunged {
+		if p == (*V)(expunged) {
 			return nil, false
 		}
 		if e.p.CompareAndSwap(p, i) {
@@ -343,7 +344,7 @@ func (m *Map[K, V]) CompareAndDelete(key K, old V) (deleted bool) {
 	}
 	for ok {
 		p := e.p.Load()
-		if p == nil || p == e.expunged || p != &old {
+		if p == nil || p == (*V)(expunged) || !reflect.DeepEqual(*p, old) {
 			return false
 		}
 		if e.p.CompareAndSwap(p, nil) {
@@ -410,12 +411,12 @@ func (m *Map[K, V]) initDirty(size int) {
 func (e *entry[V]) tryExpungeLocked() (isExpunged bool) {
 	p := e.p.Load()
 	for p == nil {
-		if e.p.CompareAndSwap(nil, e.expunged) {
+		if e.p.CompareAndSwap(nil, (*V)(expunged)) {
 			return true
 		}
 		p = e.p.Load()
 	}
-	return p == e.expunged
+	return p == (*V)(expunged)
 }
 
 func (m *Map[K, V]) Len() int {
@@ -450,7 +451,7 @@ func (m *Map[K, V]) Size() (size uintptr) {
 	}
 	size += mapSize(m.dirty) // map[K]*entry[V]
 	for _, e := range m.dirty {
-		size += e.Size() // entry size (expunged atomic.Pointer[V], p atomic.Pointer[V])
+		size += e.Size() // entry size (p atomic.Pointer[V])
 	}
 	return size
 }
@@ -459,13 +460,9 @@ func (e *entry[V]) Size() (size uintptr) {
 	if e == nil {
 		return 0
 	}
-	size = unsafe.Sizeof(e.expunged) // *V
-	size += unsafe.Sizeof(e.p)       // atomic.Pointer[V]
+	size += unsafe.Sizeof(e.p) // atomic.Pointer[V]
 
-	if ee := e.expunged; ee != nil {
-		size += unsafe.Sizeof(*ee) // V
-	}
-	if ep := e.p.Load(); ep != nil {
+	if ep := e.p.Load(); ep != nil && ep != (*V)(expunged) {
 		size += unsafe.Sizeof(*ep) // V
 	}
 	return size
