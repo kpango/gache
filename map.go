@@ -30,6 +30,7 @@
 package gache
 
 import (
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -117,9 +118,12 @@ func (m *Map[K, V]) Clear() {
 	m.misses = 0
 }
 
+// tryCompareAndSwap uses reflect.DeepEqual for equality to support non-comparable
+// types (e.g. slices, maps) since Map has a V any constraint. This trades a small
+// performance overhead for correctness and safety.
 func (e *entry[V]) tryCompareAndSwap(old, new V) (ok bool) {
 	p := e.p.Load()
-	if p == nil || p == e.expunged || any(*p) != any(old) {
+	if p == nil || p == e.expunged || !reflect.DeepEqual(*p, old) {
 		return false
 	}
 
@@ -129,7 +133,7 @@ func (e *entry[V]) tryCompareAndSwap(old, new V) (ok bool) {
 			return true
 		}
 		p = e.p.Load()
-		if p == nil || p == e.expunged || any(*p) != any(old) {
+		if p == nil || p == e.expunged || !reflect.DeepEqual(*p, old) {
 			return false
 		}
 	}
@@ -181,8 +185,9 @@ func (m *Map[K, V]) LoadOrStorePtr(key K, value V) (actual *V, loaded bool) {
 		if m.dirty == nil {
 			m.initDirty(len(read.m))
 		}
-		m.dirty[key] = newEntry(value)
-		actual, loaded = &value, false
+		ne := newEntry(value)
+		m.dirty[key] = ne
+		actual, loaded = ne.p.Load(), false
 	}
 	m.mu.Unlock()
 	return actual, loaded
@@ -200,7 +205,7 @@ func (e *entry[V]) tryLoadOrStore(i V) (actual *V, loaded, ok bool) {
 	ic := i
 	for {
 		if e.p.CompareAndSwap(nil, &ic) {
-			return &i, false, true
+			return &ic, false, true
 		}
 		p = e.p.Load()
 		if p == e.expunged {
@@ -339,7 +344,7 @@ func (m *Map[K, V]) CompareAndDelete(key K, old V) (deleted bool) {
 	}
 	for ok {
 		p := e.p.Load()
-		if p == nil || p == e.expunged || any(*p) != any(old) {
+		if p == nil || p == e.expunged || !reflect.DeepEqual(*p, old) {
 			return false
 		}
 		if e.p.CompareAndSwap(p, nil) {
