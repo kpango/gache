@@ -40,6 +40,10 @@ bench: deps
 	sleep 3
 	go test -count=1 -timeout=30m -run=NONE -bench . -benchmem
 
+bench/gache: deps
+	sleep 3
+	go test -count=1 -timeout=30m -run=NONE -bench=BenchmarkGache -benchmem
+
 init:
 	GO111MODULE=on go mod init github.com/kpango/gache/v2
 	GO111MODULE=on go mod tidy
