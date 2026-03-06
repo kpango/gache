@@ -49,3 +49,13 @@ func WithMaxKeyLength[V any](kl uint64) Option[V] {
 		return nil
 	}
 }
+
+// WithLockMap sets the underlying map structure to use the map with sync.RWMutex
+// instead of the default custom lock-free map implementation.
+// This might be faster depending on the access pattern and the increased shard count.
+func WithLockMap[V any]() Option[V] {
+	return func(g *gache[V]) error {
+		g.useLockMap = true
+		return nil
+	}
+}

@@ -17,6 +17,21 @@ import (
 )
 
 type (
+	mapInterface[V any] interface {
+		Load(key string) (*value[V], bool)
+		Store(key string, value *value[V])
+		LoadOrStore(key string, value *value[V]) (actual *value[V], loaded bool)
+		Swap(key string, value *value[V]) (previous *value[V], loaded bool)
+		LoadAndDelete(key string) (value *value[V], loaded bool)
+		Delete(key string)
+		CompareAndSwap(key string, old, new *value[V]) (swapped bool)
+		CompareAndDelete(key string, old *value[V]) (deleted bool)
+		Range(f func(key string, value *value[V]) bool)
+		Clear()
+		Len() int
+		Size() uintptr
+	}
+
 	// Gache is base interface type
 	Gache[V any] interface {
 		Clear()
@@ -52,7 +67,9 @@ type (
 
 	// gache is base instance type
 	gache[V any] struct {
-		shards         [slen]*Map[string, *value[V]]
+		useLockMap bool
+
+		shards         [slen]mapInterface[V]
 		cancel         atomic.Pointer[context.CancelFunc]
 		expChan        chan keyValue[V]
 		expFunc        func(context.Context, string, V)
@@ -76,10 +93,10 @@ type (
 
 const (
 	// slen is shards length
-	slen = 512
+	slen = 8192
 	// slen = 4096
 	// mask is slen-1 Hex value
-	mask = 0x1FF
+	mask = 0x1FFF
 	// mask = 0xFFF
 
 	// NoTTL can be use for disabling ttl cache expiration
@@ -111,7 +128,7 @@ func New[V any](opts ...Option[V]) Gache[V] {
 	return g
 }
 
-func newMap[V any]() (m *Map[string, *value[V]]) {
+func newMap[V any]() mapInterface[V] {
 	return new(Map[string, *value[V]])
 }
 
@@ -412,7 +429,11 @@ func (g *gache[V]) Stop() {
 func (g *gache[V]) Clear() {
 	for i := range g.shards {
 		if g.shards[i] == nil {
-			g.shards[i] = newMap[V]()
+			if g.useLockMap {
+				g.shards[i] = new(MapLock[string, *value[V]])
+			} else {
+				g.shards[i] = newMap[V]()
+			}
 		} else {
 			g.shards[i].Clear()
 		}
