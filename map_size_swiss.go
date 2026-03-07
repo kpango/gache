@@ -38,7 +38,7 @@ import "unsafe"
 //
 //	used              uint64         offset  0
 //	seed              uintptr        offset  8
-//	dirPtr            unsafe.Pointer offset 16
+//	dirPointer            unsafe.Pointer offset 16
 //	dirLen            int            offset 24
 //	globalDepth       uint8          offset 32
 //	globalShift       uint8          offset 33
@@ -49,7 +49,7 @@ import "unsafe"
 type hmap struct {
 	used              uint64
 	seed              uintptr
-	dirPtr            unsafe.Pointer
+	dirPointer            unsafe.Pointer
 	dirLen            int
 	globalDepth       uint8
 	globalShift       uint8
@@ -127,14 +127,14 @@ func mapSize[K comparable, V any](m map[K]V) uintptr {
 	size := unsafe.Sizeof(*h)
 
 	if h.dirLen == 0 {
-		// Small-map optimisation: dirPtr points directly to one group.
-		if h.dirPtr != nil {
+		// Small-map optimisation: dirPointer points directly to one group.
+		if h.dirPointer != nil {
 			size += groupSize
 		}
 		return size
 	}
 
-	// Large map: dirPtr is *[dirLen]*table.
+	// Large map: dirPointer is *[dirLen]*table.
 	// Account for the directory pointer array itself.
 	const ptrSize = unsafe.Sizeof(uintptr(0))
 	size += uintptr(h.dirLen) * ptrSize
@@ -142,7 +142,7 @@ func mapSize[K comparable, V any](m map[K]V) uintptr {
 	// Deduplicate table pointers (directory entries may alias the same table).
 	tables := make(map[unsafe.Pointer]struct{}, h.dirLen)
 	for i := 0; i < h.dirLen; i++ {
-		tp := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(h.dirPtr) + uintptr(i)*ptrSize))
+		tp := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(h.dirPointer) + uintptr(i)*ptrSize))
 		if tp != nil {
 			tables[tp] = struct{}{}
 		}
