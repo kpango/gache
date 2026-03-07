@@ -73,28 +73,34 @@ func (m *Map[K, V]) loadReadOnly() (ro readOnly[K, V]) {
 	return readOnly[K, V]{}
 }
 
+// loadEntry abstracts the double-checked locking mechanism to find an entry.
+// If del is true, it deletes the entry from the dirty map if it is found there.
 func (m *Map[K, V]) loadEntry(key K, del bool) (*entry[V], bool) {
+	read := m.loadReadOnly()
+	if e, ok := read.m[key]; ok || !read.amended {
+		return e, ok
+	}
+	return m.loadEntrySlow(key, del)
+}
+
+func (m *Map[K, V]) loadEntrySlow(key K, del bool) (*entry[V], bool) {
+	m.mu.Lock()
 	read := m.loadReadOnly()
 	e, ok := read.m[key]
 	if !ok && read.amended {
-		m.mu.Lock()
-		read = m.loadReadOnly()
-		e, ok = read.m[key]
-		if !ok && read.amended {
-			e, ok = m.dirty[key]
-			if ok && del {
-				delete(m.dirty, key)
-			}
-			m.missLocked()
+		e, ok = m.dirty[key]
+		if ok && del {
+			delete(m.dirty, key)
 		}
-		m.mu.Unlock()
+		m.missLocked()
 	}
+	m.mu.Unlock()
 	return e, ok
 }
 
 func (m *Map[K, V]) Load(key K) (value V, ok bool) {
 	v, ok := m.LoadPointer(key)
-	if !ok {
+	if !ok || v == nil {
 		return value, false
 	}
 	return *v, true
@@ -170,9 +176,12 @@ func (m *Map[K, V]) SwapPointer(key K, value *V) (previous *V, loaded bool) {
 			return v, true
 		}
 	}
+	return m.swapPointerSlow(key, value)
+}
 
+func (m *Map[K, V]) swapPointerSlow(key K, value *V) (previous *V, loaded bool) {
 	m.mu.Lock()
-	read = m.loadReadOnly()
+	read := m.loadReadOnly()
 	if e, ok := read.m[key]; ok {
 		if e.unexpungeLocked() {
 			if m.dirty == nil {
@@ -211,9 +220,12 @@ func (m *Map[K, V]) LoadOrStorePointer(key K, value *V) (actual *V, loaded bool)
 			return actual, loaded
 		}
 	}
+	return m.loadOrStorePointerSlow(key, value)
+}
 
+func (m *Map[K, V]) loadOrStorePointerSlow(key K, value *V) (actual *V, loaded bool) {
 	m.mu.Lock()
-	read = m.loadReadOnly()
+	read := m.loadReadOnly()
 	if e, ok := read.m[key]; ok {
 		if e.unexpungeLocked() {
 			if m.dirty == nil {
@@ -274,7 +286,7 @@ func (m *Map[K, V]) LoadAndDelete(key K) (value V, loaded bool) {
 
 func (m *Map[K, V]) LoadAndDeletePointer(key K) (value *V, loaded bool) {
 	e, ok := m.loadEntry(key, true)
-	if ok {
+	if ok && e != nil {
 		return e.deletePointer()
 	}
 	return nil, false
@@ -351,10 +363,13 @@ func (m *Map[K, V]) casEntry(key K, tryCAS func(*entry[V]) bool) bool {
 	} else if !read.amended {
 		return false
 	}
+	return m.casEntrySlow(key, tryCAS)
+}
 
+func (m *Map[K, V]) casEntrySlow(key K, tryCAS func(*entry[V]) bool) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	read = m.loadReadOnly()
+	read := m.loadReadOnly()
 	if e, ok := read.m[key]; ok {
 		return tryCAS(e)
 	} else if e, ok := m.dirty[key]; ok {

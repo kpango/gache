@@ -219,7 +219,7 @@ func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 		case <-ctx.Done():
 			return m
 		default:
-			g.shards[i].RangePointer(func(k string, v *value[V]) bool {
+			g.shards[i].Range(func(k string, v value[V]) bool {
 				if v.isValid() {
 					m[k] = v.val
 				} else {
@@ -234,9 +234,8 @@ func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 
 // get returns value & exists from key
 func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
-	var val *value[V]
-	shard := g.shards[getShardID(key, g.maxKeyLength)]
-	val, ok = shard.LoadPointer(key)
+	var val value[V]
+	val, ok = g.shards[getShardID(key, g.maxKeyLength)].Load(key)
 	if !ok {
 		return v, 0, false
 	}
@@ -299,12 +298,11 @@ func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 		g.valPool.Put(val)
 		return v, loaded
 	}
-	return v, loaded
+	return v, false
 }
 
 func (g *gache[V]) expiration(key string) {
 	v, loaded := g.Delete(key)
-
 	if loaded && g.expFuncEnabled {
 		g.expChan <- keyValue[V]{key: key, value: v}
 	}
@@ -484,7 +482,7 @@ func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool)
 
 // GetWithIgnoredExpire returns value & exists from key, ignoring expiration.
 func (g *gache[V]) GetWithIgnoredExpire(key string) (v V, ok bool) {
-	val, ok := g.shards[getShardID(key, g.maxKeyLength)].LoadPointer(key)
+	val, ok := g.shards[getShardID(key, g.maxKeyLength)].Load(key)
 	if !ok {
 		return v, false
 	}
