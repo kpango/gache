@@ -26,7 +26,7 @@ type refTableHdr struct {
 type refHmap struct {
 	used              uint64
 	seed              uintptr
-	dirPointer            unsafe.Pointer
+	dirPointer        unsafe.Pointer
 	dirLen            int
 	globalDepth       uint8
 	globalShift       uint8

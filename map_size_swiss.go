@@ -49,7 +49,7 @@ import "unsafe"
 type hmap struct {
 	used              uint64
 	seed              uintptr
-	dirPointer            unsafe.Pointer
+	dirPointer        unsafe.Pointer
 	dirLen            int
 	globalDepth       uint8
 	globalShift       uint8
