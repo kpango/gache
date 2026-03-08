@@ -44,7 +44,7 @@ var benchParallelismFlag string
 
 // parallelismValues is the set of parallelism levels used by all benchmarks.
 // It is populated from -benchparallelism (comma-separated integers) in
-// TestMain; the default is []int{100, 1000, 10000}.
+// TestMain; see TestMain for the current default values.
 var parallelismValues []int
 
 // keyValue holds a pre-computed key-value pair for deterministic benchmark iteration.
@@ -62,7 +62,7 @@ var (
 )
 
 func init() {
-	flag.StringVar(&benchParallelismFlag, "benchparallelism", "", "comma-separated list of parallelism values for benchmarks (default: 100,1000,5000, 10000)")
+	flag.StringVar(&benchParallelismFlag, "benchparallelism", "", "comma-separated list of parallelism values for benchmarks (default: 100,1000,5000,10000)")
 
 	var (
 		bigDataLen     = 2 << 10
@@ -92,7 +92,7 @@ func init() {
 	})
 }
 
-var randSrc = rand.NewSource(time.Now().UnixNano())
+var randSrc = rand.NewSource(42)
 
 const (
 	rs6Letters       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"

@@ -275,7 +275,7 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	newVal.expire = expire
 	old, loaded := shard.SwapPointer(key, newVal)
 	if !loaded {
-		atomic.AddUint64(&shard.l, 1)
+		shard.l.Add(1)
 	} else {
 		old.reset()
 		g.valPool.Put(old)
@@ -298,7 +298,7 @@ func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
 	val, loaded = shard.LoadAndDeletePointer(key)
 	if loaded {
-		atomic.AddUint64(&shard.l, ^uint64(0))
+		shard.l.Add(^uint64(0))
 		v = val.val
 		val.reset()
 		g.valPool.Put(val)
@@ -368,7 +368,7 @@ func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gac
 func (g *gache[V]) Len() int {
 	var l uint64
 	for i := range g.shards {
-		l += atomic.LoadUint64(&g.shards[i].l)
+		l += g.shards[i].l.Load()
 	}
 	// Convert from uint64 to int in a safe, portable way with clamping.
 	maxInt := int(^uint(0) >> 1)
@@ -427,7 +427,7 @@ func (g *gache[V]) Clear() {
 		} else {
 			g.shards[i].Clear()
 		}
-		atomic.StoreUint64(&g.shards[i].l, 0)
+		g.shards[i].l.Store(0)
 	}
 }
 
@@ -523,7 +523,7 @@ func (g *gache[V]) Pop(key string) (v V, ok bool) {
 	if !loaded {
 		return v, false
 	}
-	atomic.AddUint64(&shard.l, ^uint64(0))
+	shard.l.Add(^uint64(0))
 	v = val.val
 	valid := val.isValid()
 	val.reset()
@@ -557,7 +557,7 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 	for {
 		actual, loaded := shard.LoadOrStorePointer(key, newVal)
 		if !loaded {
-			atomic.AddUint64(&shard.l, 1)
+			shard.l.Add(1)
 			return
 		}
 
