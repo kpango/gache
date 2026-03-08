@@ -1,17 +1,18 @@
 package gache
 
 import (
+	"flag"
 	"fmt"
 	"math/rand"
 	"os"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-	"unsafe"
 )
 
 type DefaultMap struct {
@@ -38,30 +39,60 @@ func (m *DefaultMap) Set(key, val any) {
 	m.data[key] = val
 }
 
+// benchParallelismFlag holds the raw flag value for -benchparallelism.
+var benchParallelismFlag string
+
+// parallelismValues is the set of parallelism levels used by all benchmarks.
+// It is populated from -benchparallelism (comma-separated integers) in
+// TestMain; see TestMain for the current default values.
+var parallelismValues []int
+
+// keyValue holds a pre-computed key-value pair for deterministic benchmark iteration.
+type keyValue struct {
+	key   string
+	value string
+}
+
 var (
 	ttl time.Duration = 50 * time.Millisecond
 
-	parallelism = 10000
-
-	bigData      = map[string]string{}
-	bigDataLen   = 2 << 10
-	bigDataCount = 2 << 16
-
-	smallData = map[string]string{
-		"string": "aaaa",
-		"int":    "123",
-		"float":  "99.99",
-		"struct": "struct{}{}",
-	}
+	// Pre-computed slices for deterministic iteration order in benchmarks.
+	smallData []keyValue
+	bigData   []keyValue
 )
 
 func init() {
+	flag.StringVar(&benchParallelismFlag, "benchparallelism", "", "comma-separated list of parallelism values for benchmarks (default: 100,1000,5000,10000)")
+
+	var (
+		bigDataLen     = 2 << 10
+		bigDataCount   = 2 << 16
+		smallDataLen   = 2 << 5
+		smallDataCount = 2 << 3
+	)
+	bigData = make([]keyValue, 0, bigDataCount)
 	for range bigDataCount {
-		bigData[randStr(bigDataLen)] = randStr(bigDataLen)
+		bigData = append(bigData, keyValue{
+			key:   randStr(bigDataLen),
+			value: randStr(bigDataLen),
+		})
 	}
+	slices.SortFunc(bigData, func(a, b keyValue) int {
+		return strings.Compare(a.key, b.key)
+	})
+	smallData = make([]keyValue, 0, smallDataCount)
+	for range smallDataCount {
+		smallData = append(smallData, keyValue{
+			key:   randStr(smallDataLen),
+			value: randStr(smallDataLen),
+		})
+	}
+	slices.SortFunc(smallData, func(a, b keyValue) int {
+		return strings.Compare(a.key, b.key)
+	})
 }
 
-var randSrc = rand.NewSource(time.Now().UnixNano())
+var randSrc = rand.NewSource(42)
 
 const (
 	rs6Letters       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -85,28 +116,35 @@ func randStr(n int) string {
 		cache >>= rs6LetterIdxBits
 		remain--
 	}
-	return *(*string)(unsafe.Pointer(&b))
+	return string(b)
 }
 
-func benchmark(b *testing.B, data map[string]string,
+// benchmark runs a mixed set-and-get workload benchmark for each configured
+// parallelism value, emitting sub-benchmarks named "P<n>".
+func benchmark(b *testing.B, data []keyValue,
 	t time.Duration,
 	set func(string, string, time.Duration),
 	get func(string),
 ) {
 	b.Helper()
-	b.SetParallelism(parallelism)
-	b.ReportAllocs()
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			for k, v := range data {
-				set(k, v, t)
-			}
-			for k := range data {
-				get(k)
-			}
-		}
-	})
+	for _, p := range parallelismValues {
+		b.Run(fmt.Sprintf("P%d", p), func(b *testing.B) {
+			b.SetParallelism(p)
+			b.ReportAllocs()
+			runtime.GC()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					for _, kv := range data {
+						set(kv.key, kv.value, t)
+					}
+					for _, kv := range data {
+						get(kv.key)
+					}
+				}
+			})
+		})
+	}
 }
 
 func BenchmarkDefaultMapSetSmallDataNoTTL(b *testing.B) {
@@ -178,6 +216,18 @@ func BenchmarkGacheSetBigDataWithTTL(b *testing.B) {
 }
 
 func TestMain(m *testing.M) {
+	flag.Parse()
+	if benchParallelismFlag != "" {
+		for s := range strings.SplitSeq(benchParallelismFlag, ",") {
+			v, err := strconv.Atoi(strings.TrimSpace(s))
+			if err == nil && v > 0 {
+				parallelismValues = append(parallelismValues, v)
+			}
+		}
+	}
+	if len(parallelismValues) == 0 {
+		parallelismValues = []int{100, 1000, 5000, 10000}
+	}
 	setup()
 	code := m.Run()
 	shutdown()
