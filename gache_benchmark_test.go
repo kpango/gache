@@ -138,7 +138,8 @@ func BenchmarkSyncMapSetBigDataNoTTL(b *testing.B) {
 }
 
 func BenchmarkGacheSetSmallDataNoTTL(b *testing.B) {
-	g := New[string](
+	g := New(
+		WithMaxKeyLength[string](0),
 		WithDefaultExpiration[string](NoTTL),
 	)
 	benchmark(b, smallData, NoTTL,
@@ -147,7 +148,8 @@ func BenchmarkGacheSetSmallDataNoTTL(b *testing.B) {
 }
 
 func BenchmarkGacheSetSmallDataWithTTL(b *testing.B) {
-	g := New[string](
+	g := New(
+		WithMaxKeyLength[string](0),
 		WithDefaultExpiration[string](ttl),
 	)
 	benchmark(b, smallData, ttl,
@@ -156,7 +158,8 @@ func BenchmarkGacheSetSmallDataWithTTL(b *testing.B) {
 }
 
 func BenchmarkGacheSetBigDataNoTTL(b *testing.B) {
-	g := New[string](
+	g := New(
+		WithMaxKeyLength[string](0),
 		WithDefaultExpiration[string](NoTTL),
 	)
 	benchmark(b, bigData, NoTTL,
@@ -165,7 +168,8 @@ func BenchmarkGacheSetBigDataNoTTL(b *testing.B) {
 }
 
 func BenchmarkGacheSetBigDataWithTTL(b *testing.B) {
-	g := New[string](
+	g := New(
+		WithMaxKeyLength[string](0),
 		WithDefaultExpiration[string](ttl),
 	)
 	benchmark(b, bigData, ttl,

@@ -11,5 +11,5 @@ require (
 require (
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 )
