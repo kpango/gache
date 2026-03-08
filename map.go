@@ -41,6 +41,7 @@ type Map[K comparable, V any] struct {
 	mu     sync.RWMutex
 	dirty  map[K]*entry[V]
 	misses int
+	l      uint64 // shard counter
 }
 
 type readOnly[K comparable, V any] struct {
@@ -167,6 +168,7 @@ func (m *Map[K, V]) Clear() {
 	clear(m.dirty)
 	// Don't immediately promote the newly-cleared dirty map on the next operation.
 	m.misses = 0
+	m.l = 0
 }
 
 func (e *entry[V]) unexpungeLocked() (wasExpunged bool) {
@@ -537,7 +539,7 @@ func (m *Map[K, V]) Size() (size uintptr) {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	size = unsafe.Sizeof(*m) // Includes mu, read, dirty, misses
+	size = unsafe.Sizeof(*m) // Includes mu, read, dirty, misses, l
 
 	if ro := m.read.Load(); ro != nil {
 		size += ro.Size()
