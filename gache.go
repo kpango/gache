@@ -118,8 +118,14 @@ func newMap[V any]() (m *Map[string, value[V]]) {
 }
 
 func getShardID(key string, kl uint64) (id uint64) {
+	lk := len(key)
+	if lk == 0 {
+		return 0
+	}
 	if kl != 0 {
-		kl = min(uint64(len(key)), kl)
+		if uint64(lk) < kl {
+			kl = uint64(lk)
+		}
 		if kl == 1 {
 			return uint64(key[0]) & mask
 		}
@@ -128,10 +134,10 @@ func getShardID(key string, kl uint64) (id uint64) {
 		}
 		return xxh3.HashString(key[:kl]) & mask
 	}
-	if len(key) == 1 {
+	if lk == 1 {
 		return uint64(key[0]) & mask
 	}
-	if len(key) <= 32 {
+	if lk <= 32 {
 		return maphash.String(hashSeed, key) & mask
 	}
 	return xxh3.HashString(key) & mask
