@@ -274,9 +274,7 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	newVal.val = val
 	newVal.expire = expire
 	old, loaded := shard.SwapPointer(key, newVal)
-	if !loaded {
-		shard.l.Add(1)
-	} else {
+	if loaded {
 		old.reset()
 		g.valPool.Put(old)
 	}
@@ -298,7 +296,6 @@ func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
 	val, loaded = shard.LoadAndDeletePointer(key)
 	if loaded {
-		shard.l.Add(^uint64(0))
 		v = val.val
 		val.reset()
 		g.valPool.Put(val)
@@ -366,16 +363,11 @@ func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gac
 
 // Len returns stored object length
 func (g *gache[V]) Len() int {
-	var l uint64
+	var l int
 	for i := range g.shards {
-		l += g.shards[i].l.Load()
+		l += g.shards[i].Len()
 	}
-	// Convert from uint64 to int in a safe, portable way with clamping.
-	maxInt := int(^uint(0) >> 1)
-	if l > uint64(maxInt) {
-		return maxInt
-	}
-	return int(l)
+	return l
 }
 
 func (g *gache[V]) Size() (size uintptr) {
@@ -427,7 +419,6 @@ func (g *gache[V]) Clear() {
 		} else {
 			g.shards[i].Clear()
 		}
-		g.shards[i].l.Store(0)
 	}
 }
 
@@ -523,7 +514,6 @@ func (g *gache[V]) Pop(key string) (v V, ok bool) {
 	if !loaded {
 		return v, false
 	}
-	shard.l.Add(^uint64(0))
 	v = val.val
 	valid := val.isValid()
 	val.reset()
@@ -557,7 +547,6 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 	for {
 		actual, loaded := shard.LoadOrStorePointer(key, newVal)
 		if !loaded {
-			shard.l.Add(1)
 			return
 		}
 

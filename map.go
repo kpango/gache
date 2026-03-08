@@ -196,12 +196,17 @@ func (m *Map[K, V]) SwapPointer(key K, value *V) (previous *V, loaded bool) {
 	if e, ok := read.m[key]; ok {
 		if v, ok := e.trySwap(value); ok {
 			if v == nil {
+				m.l.Add(1)
 				return nil, false
 			}
 			return v, true
 		}
 	}
-	return m.swapPointerSlow(key, value)
+	previous, loaded = m.swapPointerSlow(key, value)
+	if !loaded {
+		m.l.Add(1)
+	}
+	return previous, loaded
 }
 
 func (m *Map[K, V]) swapPointerSlow(key K, value *V) (previous *V, loaded bool) {
@@ -242,10 +247,17 @@ func (m *Map[K, V]) LoadOrStorePointer(key K, value *V) (actual *V, loaded bool)
 	if e, ok := read.m[key]; ok {
 		actual, loaded, ok := e.tryLoadOrStorePointer(value)
 		if ok {
+			if !loaded {
+				m.l.Add(1)
+			}
 			return actual, loaded
 		}
 	}
-	return m.loadOrStorePointerSlow(key, value)
+	actual, loaded = m.loadOrStorePointerSlow(key, value)
+	if !loaded {
+		m.l.Add(1)
+	}
+	return actual, loaded
 }
 
 func (m *Map[K, V]) loadOrStorePointerSlow(key K, value *V) (actual *V, loaded bool) {
@@ -312,7 +324,11 @@ func (m *Map[K, V]) LoadAndDelete(key K) (value V, loaded bool) {
 func (m *Map[K, V]) LoadAndDeletePointer(key K) (value *V, loaded bool) {
 	e, ok := m.loadEntry(key, true)
 	if ok && e != nil {
-		return e.deletePointer()
+		value, loaded = e.deletePointer()
+		if loaded {
+			m.l.Add(^uint64(0))
+		}
+		return value, loaded
 	}
 	return nil, false
 }
@@ -439,6 +455,7 @@ func (m *Map[K, V]) CompareAndDelete(key K, old V) (deleted bool) {
 			return false
 		}
 		if e.p.CompareAndSwap(p, nil) {
+			m.l.Add(^uint64(0))
 			return true
 		}
 	}
@@ -517,20 +534,7 @@ func (e *entry[V]) tryExpungeLocked() (isExpunged bool) {
 }
 
 func (m *Map[K, V]) Len() int {
-	read := m.loadReadOnly()
-	if read.amended {
-		m.mu.Lock()
-		read = m.loadReadOnly()
-		if read.amended {
-			read = readOnly[K, V]{m: m.dirty}
-			m.read.Store(&read)
-			m.dirty = nil
-			m.misses = 0
-		}
-		m.mu.Unlock()
-	}
-
-	return len(read.m)
+	return int(m.l.Load())
 }
 
 func (m *Map[K, V]) Size() (size uintptr) {
