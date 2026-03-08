@@ -146,10 +146,6 @@ func (m *Map[K, V]) Store(key K, value V) {
 }
 
 func (m *Map[K, V]) StorePointer(key K, value *V) {
-	if value == nil {
-		m.Delete(key)
-		return
-	}
 	m.SwapPointer(key, value)
 }
 

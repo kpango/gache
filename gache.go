@@ -118,14 +118,12 @@ func newMap[V any]() (m *Map[string, value[V]]) {
 }
 
 func getShardID(key string, kl uint64) (id uint64) {
-	lk := len(key)
+	lk := uint64(len(key))
 	if lk == 0 {
 		return 0
 	}
 	if kl != 0 {
-		if uint64(lk) < kl {
-			kl = uint64(lk)
-		}
+		kl = min(kl, lk)
 		if kl == 1 {
 			return uint64(key[0]) & mask
 		}
