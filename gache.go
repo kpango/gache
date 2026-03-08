@@ -59,8 +59,10 @@ type (
 		valPool        *sync.Pool
 		expFuncEnabled bool
 		expire         int64
-		l              uint64
 		maxKeyLength   uint64
+
+		expBuf  *ringBuffer[keyValue[V]]
+		lazyBuf *ringBuffer[string]
 	}
 
 	value[V any] struct {
@@ -109,7 +111,8 @@ func New[V any](opts ...Option[V]) Gache[V] {
 	}, opts...) {
 		opt(g)
 	}
-	g.expChan = make(chan keyValue[V], len(g.shards)*10)
+	g.expBuf = newRingBuffer[keyValue[V]](uint64(len(g.shards) * 10))
+	g.lazyBuf = newRingBuffer[string](uint64(len(g.shards) * 10))
 	return g
 }
 
@@ -128,9 +131,9 @@ func getShardID(key string, kl uint64) (id uint64) {
 			return uint64(key[0]) & mask
 		}
 		if kl <= 32 {
-			return maphash.String(hashSeed, key[:kl]) & mask
+			return maphash.String(hashSeed, unsafe.String(unsafe.StringData(key), kl)) & mask
 		}
-		return xxh3.HashString(key[:kl]) & mask
+		return xxh3.HashString(unsafe.String(unsafe.StringData(key), kl)) & mask
 	}
 	if lk == 1 {
 		return uint64(key[0]) & mask
@@ -180,23 +183,72 @@ func (g *gache[V]) SetExpiredHook(f func(context.Context, string, V)) Gache[V] {
 
 // StartExpired starts delete expired value daemon
 func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V] {
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithCancel(ctx)
+	g.cancel.Store(&cancel)
+
+	workers := runtime.GOMAXPROCS(0)
+	for range workers {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					kv, ok := g.expBuf.Pop()
+					if ok {
+						if g.expFunc != nil {
+							g.expFunc(ctx, kv.key, kv.value)
+						}
+						continue
+					}
+
+					lazyKey, ok := g.lazyBuf.Pop()
+					if ok {
+						g.expiration(lazyKey)
+						continue
+					}
+
+					// Sleep slightly or yield
+					time.Sleep(time.Millisecond)
+				}
+			}
+		}()
+	}
+
 	go func() {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithCancel(ctx)
-		g.cancel.Store(&cancel)
-		tick := time.NewTicker(dur)
+		// Calculate jitter +/- 10%
+		baseDur := int64(dur)
+
+		if baseDur > 0 {
+			jitterMax := baseDur / 10
+			if jitterMax > 0 {
+				// We need a power of 2 mask for simple random, or just use fastime.UnixNanoNow() % (2*jitterMax) - jitterMax
+			}
+		}
+
+		timer := time.NewTimer(dur)
+		defer timer.Stop()
 		for {
 			select {
 			case <-ctx.Done():
-				tick.Stop()
 				return
-			case kv := <-g.expChan:
-				go g.expFunc(ctx, kv.key, kv.value)
-			case <-tick.C:
+			case <-timer.C:
 				go func() {
 					g.DeleteExpired(ctx)
 					runtime.Gosched()
 				}()
+
+				// Calculate next duration with jitter
+				nextDur := baseDur
+				if baseDur > 0 {
+					jitterMax := baseDur / 10
+					if jitterMax > 0 {
+						jitter := (fastime.UnixNanoNow() % (jitterMax * 2)) - jitterMax
+						nextDur += jitter
+					}
+				}
+				timer.Reset(time.Duration(nextDur))
 			}
 		}
 	}()
@@ -209,9 +261,11 @@ func (g *gache[V]) ToMap(ctx context.Context) *sync.Map {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	g.Range(ctx, func(key string, val V, exp int64) (ok bool) {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			m.Store(key, val)
-		})
+		}()
 		return true
 	})
 	return m
@@ -229,7 +283,7 @@ func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 				if v.isValid() {
 					m[k] = v.val
 				} else {
-					g.expiration(k)
+					g.lazyBuf.Push(k)
 				}
 				return true
 			})
@@ -250,7 +304,7 @@ func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
 		return val.val, val.expire, true
 	}
 
-	g.expiration(key)
+	g.lazyBuf.Push(key)
 	return v, val.expire, false
 }
 
@@ -276,7 +330,7 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	newVal.expire = expire
 	old, loaded := shard.SwapPointer(key, newVal)
 	if !loaded {
-		atomic.AddUint64(&g.l, 1)
+		atomic.AddUint64(&shard.l, 1)
 	} else {
 		old.reset()
 		g.valPool.Put(old)
@@ -296,9 +350,10 @@ func (g *gache[V]) Set(key string, val V) {
 // Delete deletes value from Gache using key
 func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 	var val *value[V]
-	val, loaded = g.shards[getShardID(key, g.maxKeyLength)].LoadAndDeletePointer(key)
+	shard := g.shards[getShardID(key, g.maxKeyLength)]
+	val, loaded = shard.LoadAndDeletePointer(key)
 	if loaded {
-		atomic.AddUint64(&g.l, ^uint64(0))
+		atomic.AddUint64(&shard.l, ^uint64(0))
 		v = val.val
 		val.reset()
 		g.valPool.Put(val)
@@ -310,7 +365,8 @@ func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 func (g *gache[V]) expiration(key string) {
 	v, loaded := g.Delete(key)
 	if loaded && g.expFuncEnabled {
-		g.expChan <- keyValue[V]{key: key, value: v}
+		// Non-blocking drop if full
+		g.expBuf.Push(keyValue[V]{key: key, value: v})
 	}
 }
 
@@ -325,11 +381,13 @@ func (g *gache[V]) DeleteExpired(ctx context.Context) (rows uint64) {
 			case <-c.Done():
 				return
 			default:
+				time.Sleep(time.Duration(idx) * time.Microsecond) // staggered sweep
 				g.shards[idx].RangePointer(func(k string, v *value[V]) (ok bool) {
 					if !v.isValid() {
 						g.expiration(k)
 						atomic.AddUint64(&rows, 1)
 					}
+					runtime.Gosched()
 					return true
 				})
 			}
@@ -354,7 +412,7 @@ func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gac
 					if v.isValid() {
 						return f(k, v.val, v.expire)
 					}
-					g.expiration(k)
+					g.lazyBuf.Push(k)
 					return true
 				})
 			}
@@ -366,16 +424,19 @@ func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gac
 
 // Len returns stored object length
 func (g *gache[V]) Len() int {
-	l := atomic.LoadUint64(&g.l)
-	return *(*int)(unsafe.Pointer(&l))
+	var l uint64
+	for i := range g.shards {
+		l += atomic.LoadUint64(&g.shards[i].l)
+	}
+	return int(l)
 }
 
 func (g *gache[V]) Size() (size uintptr) {
 	size += unsafe.Sizeof(g.expFuncEnabled) // bool
 	size += unsafe.Sizeof(g.expire)         // int64
-	size += unsafe.Sizeof(g.l)              // uint64
 	size += unsafe.Sizeof(g.cancel)         // atomic.Pointer[context.CancelFunc]
-	size += unsafe.Sizeof(g.expChan)        // chan keyValue[V]
+	size += unsafe.Sizeof(g.expBuf)         // *ringBuffer[keyValue[V]]
+	size += unsafe.Sizeof(g.lazyBuf)        // *ringBuffer[string]
 	size += unsafe.Sizeof(g.expFunc)        // func(context.Context, string, V)
 	for _, shard := range g.shards {
 		size += shard.Size()
@@ -419,9 +480,9 @@ func (g *gache[V]) Clear() {
 			g.shards[i] = newMap[V]()
 		} else {
 			g.shards[i].Clear()
+			atomic.StoreUint64(&g.shards[i].l, 0)
 		}
 	}
-	atomic.StoreUint64(&g.l, 0)
 }
 
 func (v *value[V]) Size() (size uintptr) {
@@ -437,7 +498,7 @@ func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
 			return
 		}
 		if !val.isValid() {
-			g.expiration(key)
+			g.lazyBuf.Push(key)
 			return
 		}
 
@@ -469,7 +530,7 @@ func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool)
 			return v, false
 		}
 		if !val.isValid() {
-			g.expiration(key)
+			g.lazyBuf.Push(key)
 			return v, false
 		}
 
@@ -511,11 +572,12 @@ func (g *gache[V]) Keys(ctx context.Context) []string {
 
 // Pop returns value & exists from key and deletes it.
 func (g *gache[V]) Pop(key string) (v V, ok bool) {
-	val, loaded := g.shards[getShardID(key, g.maxKeyLength)].LoadAndDeletePointer(key)
+	shard := g.shards[getShardID(key, g.maxKeyLength)]
+	val, loaded := shard.LoadAndDeletePointer(key)
 	if !loaded {
 		return v, false
 	}
-	atomic.AddUint64(&g.l, ^uint64(0))
+	atomic.AddUint64(&shard.l, ^uint64(0))
 	v = val.val
 	valid := val.isValid()
 	val.reset()
@@ -524,7 +586,7 @@ func (g *gache[V]) Pop(key string) (v V, ok bool) {
 		return v, true
 	}
 	if g.expFuncEnabled {
-		g.expChan <- keyValue[V]{key: key, value: v}
+		g.expBuf.Push(keyValue[V]{key: key, value: v})
 	}
 	return v, false
 }
@@ -549,7 +611,7 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 	for {
 		actual, loaded := shard.LoadOrStorePointer(key, newVal)
 		if !loaded {
-			atomic.AddUint64(&g.l, 1)
+			atomic.AddUint64(&shard.l, 1)
 			return
 		}
 

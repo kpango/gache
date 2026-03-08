@@ -41,6 +41,7 @@ type Map[K comparable, V any] struct {
 	mu     sync.RWMutex
 	dirty  map[K]*entry[V]
 	misses int
+	l      uint64 // specific shard counter
 }
 
 type readOnly[K comparable, V any] struct {
