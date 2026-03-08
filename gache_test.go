@@ -1,8 +1,12 @@
 package gache
 
 import (
+	"fmt"
+	"math/rand"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // TestGetShardID_MaxKeyLengthZero tests getShardID when maxKeyLength (kl) is 0,
@@ -228,5 +232,223 @@ func TestGetShardID_PrefixIsolation(t *testing.T) {
 	id4 := getShardID(key4, 50)
 	if id3 != id4 {
 		t.Errorf("prefix isolation (xxh3) failed: getShardID(%q, 50)=%d != getShardID(%q, 50)=%d", key3, id3, key4, id4)
+	}
+}
+
+func TestGacheLenBasic(t *testing.T) {
+	t.Parallel()
+	g := New[int](WithDefaultExpiration[int](NoTTL))
+
+	if got := g.Len(); got != 0 {
+		t.Fatalf("empty gache Len() = %d, want 0", got)
+	}
+
+	// Set increments
+	g.Set("a", 1)
+	g.Set("b", 2)
+	g.Set("c", 3)
+	if got := g.Len(); got != 3 {
+		t.Fatalf("after 3 Sets, Len() = %d, want 3", got)
+	}
+
+	// Overwrite does not change count
+	g.Set("b", 20)
+	if got := g.Len(); got != 3 {
+		t.Fatalf("after overwrite, Len() = %d, want 3", got)
+	}
+
+	// Delete decrements
+	g.Delete("a")
+	if got := g.Len(); got != 2 {
+		t.Fatalf("after Delete, Len() = %d, want 2", got)
+	}
+
+	// Delete non-existent key is a no-op
+	g.Delete("nonexistent")
+	if got := g.Len(); got != 2 {
+		t.Fatalf("after Delete(nonexistent), Len() = %d, want 2", got)
+	}
+
+	// Pop decrements
+	if _, ok := g.Pop("b"); !ok {
+		t.Fatal("Pop(b) returned ok=false")
+	}
+	if got := g.Len(); got != 1 {
+		t.Fatalf("after Pop, Len() = %d, want 1", got)
+	}
+
+	// SetIfNotExists with new key increments
+	g.SetIfNotExists("d", 4)
+	if got := g.Len(); got != 2 {
+		t.Fatalf("after SetIfNotExists(new), Len() = %d, want 2", got)
+	}
+
+	// SetIfNotExists with existing key does not change count
+	g.SetIfNotExists("d", 40)
+	if got := g.Len(); got != 2 {
+		t.Fatalf("after SetIfNotExists(existing), Len() = %d, want 2", got)
+	}
+
+	// Clear resets to 0
+	g.Clear()
+	if got := g.Len(); got != 0 {
+		t.Fatalf("after Clear, Len() = %d, want 0", got)
+	}
+}
+
+func TestGacheLenConcurrent(t *testing.T) {
+	t.Parallel()
+	g := New[int](WithDefaultExpiration[int](NoTTL)).(*gache[int])
+
+	const (
+		numGoroutines   = 16
+		opsPerGoroutine = 1000
+		keyRange        = 200
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for id := 0; id < numGoroutines; id++ {
+		go func(id int) {
+			defer wg.Done()
+			r := rand.New(rand.NewSource(int64(id)))
+			for i := 0; i < opsPerGoroutine; i++ {
+				key := fmt.Sprintf("key-%d", r.Intn(keyRange))
+				switch r.Intn(2) {
+				case 0:
+					g.Set(key, i)
+				case 1:
+					g.Delete(key)
+				}
+			}
+		}(id)
+	}
+	wg.Wait()
+
+	// Verify Len matches actual count from Range
+	actual := 0
+	for i := range g.shards {
+		g.shards[i].Range(func(k string, v value[int]) bool {
+			actual++
+			return true
+		})
+	}
+
+	if got := g.Len(); got != actual {
+		t.Fatalf("after concurrent ops, Len() = %d, but counted %d entries", got, actual)
+	}
+}
+
+func TestGacheLenConcurrentStoreDelete(t *testing.T) {
+	t.Parallel()
+	g := New[int](WithDefaultExpiration[int](NoTTL)).(*gache[int])
+
+	const (
+		numGoroutines    = 8
+		keysPerGoroutine = 500
+	)
+
+	// Phase 1: Store unique keys concurrently
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+	for id := 0; id < numGoroutines; id++ {
+		go func(base int) {
+			defer wg.Done()
+			for i := 0; i < keysPerGoroutine; i++ {
+				g.Set(fmt.Sprintf("key-%d", base+i), i)
+			}
+		}(id * keysPerGoroutine)
+	}
+	wg.Wait()
+
+	total := numGoroutines * keysPerGoroutine
+	if got := g.Len(); got != total {
+		t.Fatalf("after storing %d unique keys, Len() = %d", total, got)
+	}
+
+	// Phase 2: Delete all keys concurrently
+	wg.Add(numGoroutines)
+	for id := 0; id < numGoroutines; id++ {
+		go func(base int) {
+			defer wg.Done()
+			for i := 0; i < keysPerGoroutine; i++ {
+				g.Delete(fmt.Sprintf("key-%d", base+i))
+			}
+		}(id * keysPerGoroutine)
+	}
+	wg.Wait()
+
+	if got := g.Len(); got != 0 {
+		t.Fatalf("after deleting all keys, Len() = %d, want 0", got)
+	}
+}
+
+func TestGacheLenClearConcurrent(t *testing.T) {
+	t.Parallel()
+	g := New[int](WithDefaultExpiration[int](NoTTL)).(*gache[int])
+
+	const (
+		numWriters  = 4
+		numDeleters = 4
+		clearCycles = 200
+	)
+
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Writers
+	for id := 0; id < numWriters; id++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			r := rand.New(rand.NewSource(int64(id)))
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					g.Set(fmt.Sprintf("k-%d", r.Intn(100)), id)
+				}
+			}
+		}(id)
+	}
+
+	// Deleters
+	for id := 0; id < numDeleters; id++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			r := rand.New(rand.NewSource(int64(id + 100)))
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					g.Delete(fmt.Sprintf("k-%d", r.Intn(100)))
+				}
+			}
+		}(id)
+	}
+
+	// Periodically Clear
+	for i := 0; i < clearCycles; i++ {
+		g.Clear()
+		time.Sleep(time.Microsecond)
+	}
+
+	close(done)
+	wg.Wait()
+
+	// Final check: Len matches actual count after all goroutines have stopped
+	actual := 0
+	for i := range g.shards {
+		g.shards[i].Range(func(k string, v value[int]) bool {
+			actual++
+			return true
+		})
+	}
+	if got := g.Len(); got != actual {
+		t.Fatalf("final Len() = %d, counted %d entries", got, actual)
 	}
 }

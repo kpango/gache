@@ -307,3 +307,264 @@ func TestCompareAndSwap_NonExistingKey(t *testing.T) {
 		t.Fatalf("CompareAndSwap on an non-existing key succeeded")
 	}
 }
+
+func TestMapLenBasic(t *testing.T) {
+	var m gache.Map[string, int]
+
+	if got := m.Len(); got != 0 {
+		t.Fatalf("empty map Len() = %d, want 0", got)
+	}
+
+	// Store increments
+	m.Store("a", 1)
+	m.Store("b", 2)
+	m.Store("c", 3)
+	if got := m.Len(); got != 3 {
+		t.Fatalf("after 3 Stores, Len() = %d, want 3", got)
+	}
+
+	// Overwrite does not change count
+	m.Store("b", 20)
+	if got := m.Len(); got != 3 {
+		t.Fatalf("after overwrite, Len() = %d, want 3", got)
+	}
+
+	// Delete decrements
+	m.Delete("a")
+	if got := m.Len(); got != 2 {
+		t.Fatalf("after Delete, Len() = %d, want 2", got)
+	}
+
+	// Delete non-existent key is a no-op
+	m.Delete("nonexistent")
+	if got := m.Len(); got != 2 {
+		t.Fatalf("after Delete(nonexistent), Len() = %d, want 2", got)
+	}
+
+	// LoadAndDelete decrements
+	if _, ok := m.LoadAndDelete("b"); !ok {
+		t.Fatal("LoadAndDelete(b) returned ok=false")
+	}
+	if got := m.Len(); got != 1 {
+		t.Fatalf("after LoadAndDelete, Len() = %d, want 1", got)
+	}
+
+	// LoadOrStore with new key increments
+	if _, loaded := m.LoadOrStore("d", 4); loaded {
+		t.Fatal("LoadOrStore(d) returned loaded=true for new key")
+	}
+	if got := m.Len(); got != 2 {
+		t.Fatalf("after LoadOrStore(new), Len() = %d, want 2", got)
+	}
+
+	// LoadOrStore with existing key does not change count
+	if _, loaded := m.LoadOrStore("d", 40); !loaded {
+		t.Fatal("LoadOrStore(d) returned loaded=false for existing key")
+	}
+	if got := m.Len(); got != 2 {
+		t.Fatalf("after LoadOrStore(existing), Len() = %d, want 2", got)
+	}
+
+	// Swap with new key increments
+	if _, loaded := m.Swap("e", 5); loaded {
+		t.Fatal("Swap(e) returned loaded=true for new key")
+	}
+	if got := m.Len(); got != 3 {
+		t.Fatalf("after Swap(new), Len() = %d, want 3", got)
+	}
+
+	// Swap with existing key does not change count
+	if _, loaded := m.Swap("e", 50); !loaded {
+		t.Fatal("Swap(e) returned loaded=false for existing key")
+	}
+	if got := m.Len(); got != 3 {
+		t.Fatalf("after Swap(existing), Len() = %d, want 3", got)
+	}
+
+	// CompareAndDelete decrements
+	if !m.CompareAndDelete("e", 50) {
+		t.Fatal("CompareAndDelete(e, 50) returned false")
+	}
+	if got := m.Len(); got != 2 {
+		t.Fatalf("after CompareAndDelete, Len() = %d, want 2", got)
+	}
+
+	// CompareAndDelete with wrong value is a no-op
+	if m.CompareAndDelete("c", 999) {
+		t.Fatal("CompareAndDelete with wrong value returned true")
+	}
+	if got := m.Len(); got != 2 {
+		t.Fatalf("after CompareAndDelete(wrong), Len() = %d, want 2", got)
+	}
+
+	// Clear resets to 0
+	m.Clear()
+	if got := m.Len(); got != 0 {
+		t.Fatalf("after Clear, Len() = %d, want 0", got)
+	}
+}
+
+func TestMapLenConcurrent(t *testing.T) {
+	var m gache.Map[int, int]
+
+	const (
+		numGoroutines = 16
+		opsPerGoroutine = 1000
+		keyRange        = 200
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	// Half goroutines do Store, the other half do Delete, all on a shared key range.
+	// After all goroutines complete, verify that Len() matches the actual map contents.
+	for g := 0; g < numGoroutines; g++ {
+		go func(id int) {
+			defer wg.Done()
+			r := rand.New(rand.NewSource(int64(id)))
+			for i := 0; i < opsPerGoroutine; i++ {
+				key := r.Intn(keyRange)
+				switch r.Intn(6) {
+				case 0:
+					m.Store(key, i)
+				case 1:
+					m.LoadOrStore(key, i)
+				case 2:
+					m.Swap(key, i)
+				case 3:
+					m.Delete(key)
+				case 4:
+					m.LoadAndDelete(key)
+				case 5:
+					m.CompareAndDelete(key, i)
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+
+	// Count actual entries via Range
+	actual := 0
+	m.Range(func(k, v int) bool {
+		actual++
+		return true
+	})
+
+	if got := m.Len(); got != actual {
+		t.Fatalf("after concurrent ops, Len() = %d, but Range counted %d entries", got, actual)
+	}
+}
+
+func TestMapLenConcurrentStoreDelete(t *testing.T) {
+	// Stress test: many goroutines store unique keys then delete them all.
+	// Final Len() must be 0.
+	var m gache.Map[int, int]
+
+	const (
+		numGoroutines   = 8
+		keysPerGoroutine = 500
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines * 2)
+
+	// Phase 1: Store unique keys per goroutine
+	for g := 0; g < numGoroutines; g++ {
+		go func(base int) {
+			defer wg.Done()
+			for i := 0; i < keysPerGoroutine; i++ {
+				m.Store(base+i, i)
+			}
+		}(g * keysPerGoroutine)
+	}
+
+	// Phase 1 also: concurrent deletions (some will miss, that's fine)
+	for g := 0; g < numGoroutines; g++ {
+		go func(base int) {
+			defer wg.Done()
+			for i := 0; i < keysPerGoroutine; i++ {
+				m.Delete(base + i)
+			}
+		}(g * keysPerGoroutine)
+	}
+	wg.Wait()
+
+	// Now delete anything remaining
+	m.Range(func(k, v int) bool {
+		m.Delete(k)
+		return true
+	})
+
+	if got := m.Len(); got != 0 {
+		t.Fatalf("after storing and deleting all keys, Len() = %d, want 0", got)
+	}
+}
+
+func TestMapLenClearConcurrent(t *testing.T) {
+	// Verify that Clear() under concurrent Store/Delete doesn't corrupt the counter.
+	var m gache.Map[int, int]
+
+	const (
+		numWriters = 4
+		numDeleters = 4
+		ops        = 500
+	)
+
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Writers
+	for g := 0; g < numWriters; g++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			r := rand.New(rand.NewSource(int64(id)))
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					m.Store(r.Intn(100), id)
+				}
+			}
+		}(g)
+	}
+
+	// Deleters
+	for g := 0; g < numDeleters; g++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			r := rand.New(rand.NewSource(int64(id + 100)))
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					m.Delete(r.Intn(100))
+				}
+			}
+		}(g)
+	}
+
+	// Periodically Clear and check that Len doesn't go negative
+	for i := 0; i < ops; i++ {
+		m.Clear()
+		if l := m.Len(); l < 0 {
+			t.Fatalf("Len() = %d after Clear, must not be negative", l)
+		}
+	}
+
+	close(done)
+	wg.Wait()
+
+	// Final check: Len must match actual count
+	actual := 0
+	m.Range(func(k, v int) bool {
+		actual++
+		return true
+	})
+	if got := m.Len(); got != actual {
+		t.Fatalf("final Len() = %d, Range counted %d", got, actual)
+	}
+}
