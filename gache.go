@@ -54,12 +54,11 @@ type (
 	gache[V any] struct {
 		shards         [slen]*Map[string, value[V]]
 		cancel         atomic.Pointer[context.CancelFunc]
-		expChan        chan keyValue[V]
+		expChan        chan kv[V]
 		expFunc        func(context.Context, string, V)
 		valPool        *sync.Pool
 		expFuncEnabled bool
 		expire         int64
-		l              uint64
 		maxKeyLength   uint64
 	}
 
@@ -68,7 +67,7 @@ type (
 		expire int64
 	}
 
-	keyValue[V any] struct {
+	kv[V any] struct {
 		key   string
 		value V
 	}
@@ -109,7 +108,7 @@ func New[V any](opts ...Option[V]) Gache[V] {
 	}, opts...) {
 		opt(g)
 	}
-	g.expChan = make(chan keyValue[V], len(g.shards)*10)
+	g.expChan = make(chan kv[V], len(g.shards)*10)
 	return g
 }
 
@@ -190,8 +189,8 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 			case <-ctx.Done():
 				tick.Stop()
 				return
-			case kv := <-g.expChan:
-				go g.expFunc(ctx, kv.key, kv.value)
+			case ex := <-g.expChan:
+				go g.expFunc(ctx, ex.key, ex.value)
 			case <-tick.C:
 				go func() {
 					g.DeleteExpired(ctx)
@@ -275,9 +274,7 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	newVal.val = val
 	newVal.expire = expire
 	old, loaded := shard.SwapPointer(key, newVal)
-	if !loaded {
-		atomic.AddUint64(&g.l, 1)
-	} else {
+	if loaded {
 		old.reset()
 		g.valPool.Put(old)
 	}
@@ -296,9 +293,9 @@ func (g *gache[V]) Set(key string, val V) {
 // Delete deletes value from Gache using key
 func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 	var val *value[V]
-	val, loaded = g.shards[getShardID(key, g.maxKeyLength)].LoadAndDeletePointer(key)
+	shard := g.shards[getShardID(key, g.maxKeyLength)]
+	val, loaded = shard.LoadAndDeletePointer(key)
 	if loaded {
-		atomic.AddUint64(&g.l, ^uint64(0))
 		v = val.val
 		val.reset()
 		g.valPool.Put(val)
@@ -310,19 +307,17 @@ func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 func (g *gache[V]) expiration(key string) {
 	v, loaded := g.Delete(key)
 	if loaded && g.expFuncEnabled {
-		g.expChan <- keyValue[V]{key: key, value: v}
+		g.expChan <- kv[V]{key: key, value: v}
 	}
 }
 
 // DeleteExpired deletes expired value from Gache it can be cancel using context
 func (g *gache[V]) DeleteExpired(ctx context.Context) (rows uint64) {
 	var wg sync.WaitGroup
-	for i := range g.shards {
-		wg.Add(1)
-		go func(c context.Context, idx int) {
-			defer wg.Done()
+	for idx := range g.shards {
+		wg.Go(func() {
 			select {
-			case <-c.Done():
+			case <-ctx.Done():
 				return
 			default:
 				g.shards[idx].RangePointer(func(k string, v *value[V]) (ok bool) {
@@ -333,7 +328,7 @@ func (g *gache[V]) DeleteExpired(ctx context.Context) (rows uint64) {
 					return true
 				})
 			}
-		}(ctx, i)
+		})
 	}
 	wg.Wait()
 	return atomic.LoadUint64(&rows)
@@ -341,13 +336,11 @@ func (g *gache[V]) DeleteExpired(ctx context.Context) (rows uint64) {
 
 // Range calls f sequentially for each key and value present in the Gache.
 func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gache[V] {
-	wg := new(sync.WaitGroup)
-	for i := range g.shards {
-		wg.Add(1)
-		go func(c context.Context, idx int) {
-			defer wg.Done()
+	var wg sync.WaitGroup
+	for idx := range g.shards {
+		wg.Go(func() {
 			select {
-			case <-c.Done():
+			case <-ctx.Done():
 				return
 			default:
 				g.shards[idx].RangePointer(func(k string, v *value[V]) (ok bool) {
@@ -358,24 +351,25 @@ func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gac
 					return true
 				})
 			}
-		}(ctx, i)
+		})
 	}
 	wg.Wait()
 	return g
 }
 
 // Len returns stored object length
-func (g *gache[V]) Len() int {
-	l := atomic.LoadUint64(&g.l)
-	return *(*int)(unsafe.Pointer(&l))
+func (g *gache[V]) Len() (l int) {
+	for i := range g.shards {
+		l += g.shards[i].Len()
+	}
+	return l
 }
 
 func (g *gache[V]) Size() (size uintptr) {
 	size += unsafe.Sizeof(g.expFuncEnabled) // bool
 	size += unsafe.Sizeof(g.expire)         // int64
-	size += unsafe.Sizeof(g.l)              // uint64
 	size += unsafe.Sizeof(g.cancel)         // atomic.Pointer[context.CancelFunc]
-	size += unsafe.Sizeof(g.expChan)        // chan keyValue[V]
+	size += unsafe.Sizeof(g.expChan)        // chan kv[V]
 	size += unsafe.Sizeof(g.expFunc)        // func(context.Context, string, V)
 	for _, shard := range g.shards {
 		size += shard.Size()
@@ -421,7 +415,6 @@ func (g *gache[V]) Clear() {
 			g.shards[i].Clear()
 		}
 	}
-	atomic.StoreUint64(&g.l, 0)
 }
 
 func (v *value[V]) Size() (size uintptr) {
@@ -511,11 +504,11 @@ func (g *gache[V]) Keys(ctx context.Context) []string {
 
 // Pop returns value & exists from key and deletes it.
 func (g *gache[V]) Pop(key string) (v V, ok bool) {
-	val, loaded := g.shards[getShardID(key, g.maxKeyLength)].LoadAndDeletePointer(key)
+	shard := g.shards[getShardID(key, g.maxKeyLength)]
+	val, loaded := shard.LoadAndDeletePointer(key)
 	if !loaded {
 		return v, false
 	}
-	atomic.AddUint64(&g.l, ^uint64(0))
 	v = val.val
 	valid := val.isValid()
 	val.reset()
@@ -524,7 +517,7 @@ func (g *gache[V]) Pop(key string) (v V, ok bool) {
 		return v, true
 	}
 	if g.expFuncEnabled {
-		g.expChan <- keyValue[V]{key: key, value: v}
+		g.expChan <- kv[V]{key: key, value: v}
 	}
 	return v, false
 }
@@ -549,7 +542,6 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 	for {
 		actual, loaded := shard.LoadOrStorePointer(key, newVal)
 		if !loaded {
-			atomic.AddUint64(&g.l, 1)
 			return
 		}
 
