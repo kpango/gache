@@ -26,7 +26,7 @@ type refTableHdr struct {
 type refHmap struct {
 	used              uint64
 	seed              uintptr
-	dirPtr            unsafe.Pointer
+	dirPointer        unsafe.Pointer
 	dirLen            int
 	globalDepth       uint8
 	globalShift       uint8
@@ -63,7 +63,7 @@ func groupSizeFor[K comparable, V any]() uintptr {
 // Accounting breakdown:
 //
 //	hmap header
-//	├─ dirLen == 0, dirPtr != nil  →  + 1 group
+//	├─ dirLen == 0, dirPointer != nil  →  + 1 group
 //	└─ dirLen >  0  →  + dirLen * ptrSize            (directory array)
 //	                   + per unique table:
 //	                       tableHdr size
@@ -84,8 +84,8 @@ func expectedSizeFromSwissInternals[K comparable, V any](m map[K]V) uintptr {
 	total := unsafe.Sizeof(*h)
 
 	if h.dirLen == 0 {
-		// Small-map fast path: dirPtr points directly to a single group.
-		if h.dirPtr != nil {
+		// Small-map fast path: dirPointer points directly to a single group.
+		if h.dirPointer != nil {
 			total += groupSize
 		}
 		return total
@@ -99,7 +99,7 @@ func expectedSizeFromSwissInternals[K comparable, V any](m map[K]V) uintptr {
 	// in the directory may alias the same table during and after a split).
 	seen := make(map[unsafe.Pointer]struct{}, h.dirLen)
 	for i := 0; i < h.dirLen; i++ {
-		tp := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(h.dirPtr) + uintptr(i)*ptrSz))
+		tp := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(h.dirPointer) + uintptr(i)*ptrSz))
 		if tp != nil {
 			seen[tp] = struct{}{}
 		}
@@ -159,8 +159,8 @@ func TestSwissInternals_SanityChecks(t *testing.T) {
 	// Ensure that the offsets of the fields we read via unsafe casts have not drifted.
 	var refH refHmap
 	var prodH hmap
-	if offRef, offProd := unsafe.Offsetof(refH.dirPtr), unsafe.Offsetof(prodH.dirPtr); offRef != offProd {
-		t.Errorf("refHmap.dirPtr offset=%d != hmap.dirPtr offset=%d — struct layout drifted", offRef, offProd)
+	if offRef, offProd := unsafe.Offsetof(refH.dirPointer), unsafe.Offsetof(prodH.dirPointer); offRef != offProd {
+		t.Errorf("refHmap.dirPointer offset=%d != hmap.dirPointer offset=%d — struct layout drifted", offRef, offProd)
 	}
 	if offRef, offProd := unsafe.Offsetof(refH.dirLen), unsafe.Offsetof(prodH.dirLen); offRef != offProd {
 		t.Errorf("refHmap.dirLen offset=%d != hmap.dirLen offset=%d — struct layout drifted", offRef, offProd)
@@ -210,7 +210,7 @@ func TestSwissInternals_SanityChecks(t *testing.T) {
 	const ptrSz = unsafe.Sizeof(uintptr(0))
 	visited := make(map[unsafe.Pointer]struct{}, h.dirLen)
 	for i := 0; i < h.dirLen; i++ {
-		tp := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(h.dirPtr) + uintptr(i)*ptrSz))
+		tp := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(h.dirPointer) + uintptr(i)*ptrSz))
 		if tp == nil {
 			continue
 		}
@@ -279,7 +279,7 @@ func TestMapSizeSwiss_NilAndEmpty(t *testing.T) {
 }
 
 // TestMapSizeSwiss_SmallMap_DirectGroup inserts a handful of keys so the
-// runtime keeps the small-map representation (dirLen == 0, dirPtr → one group)
+// runtime keeps the small-map representation (dirLen == 0, dirPointer → one group)
 // and verifies that mapSize matches the reference composition.
 func TestMapSizeSwiss_SmallMap_DirectGroup(t *testing.T) {
 	t.Parallel()
@@ -378,7 +378,7 @@ func TestMapSizeSwiss_LargeMap_TableDedup(t *testing.T) {
 	const ptrSz = unsafe.Sizeof(uintptr(0))
 	unique := make(map[unsafe.Pointer]struct{}, h.dirLen)
 	for i := 0; i < h.dirLen; i++ {
-		tp := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(h.dirPtr) + uintptr(i)*ptrSz))
+		tp := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(h.dirPointer) + uintptr(i)*ptrSz))
 		if tp != nil {
 			unique[tp] = struct{}{}
 		}
