@@ -412,3 +412,28 @@ type dummyData struct {
 	Company string
 	Skills  []string
 }
+
+func BenchmarkIntensiveReadWrite_gache(b *testing.B) {
+	gc := New[int]().SetDefaultExpire(10 * time.Second)
+
+	// Pre-allocate keys to avoid allocation overhead during benchmark
+	keys := make([]string, 8192)
+	for i := range keys {
+		keys[i] = Int64Key(int64(i))
+	}
+
+	b.SetParallelism(1000)
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			idx := rand.Intn(8192)
+			key := keys[idx]
+			if idx%10 < 2 { // 20% writes
+				gc.Set(key, 1)
+			} else { // 80% reads
+				gc.Get(key)
+			}
+		}
+	})
+}

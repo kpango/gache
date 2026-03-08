@@ -66,7 +66,11 @@ func newEntryPointer[V any](v *V) (e *entry[V]) {
 	return e
 }
 
+<<<<<<< HEAD
 func (m *Map[K, V]) loadReadOnly() (ro readOnly[K, V]) {
+=======
+func (m *Map[K, V]) loadReadOnly() readOnly[K, V] {
+>>>>>>> benchmark-improvements-9237532504100206931
 	if p := m.read.Load(); p != nil {
 		return *p
 	}
@@ -85,6 +89,7 @@ func (m *Map[K, V]) loadEntry(key K, del bool) (*entry[V], bool) {
 
 func (m *Map[K, V]) loadEntrySlow(key K, del bool) (*entry[V], bool) {
 	m.mu.Lock()
+<<<<<<< HEAD
 	defer m.mu.Unlock()
 	read := m.loadReadOnly()
 	e, ok := read.m[key]
@@ -99,18 +104,18 @@ func (m *Map[K, V]) loadEntrySlow(key K, del bool) (*entry[V], bool) {
 }
 
 func (m *Map[K, V]) LoadPointer(key K) (value *V, ok bool) {
+=======
+>>>>>>> benchmark-improvements-9237532504100206931
 	read := m.loadReadOnly()
 	e, ok := read.m[key]
 	if !ok && read.amended {
-		m.mu.Lock()
-		read = m.loadReadOnly()
-		e, ok = read.m[key]
-		if !ok && read.amended {
-			e, ok = m.dirty[key]
-			m.missLocked()
+		e, ok = m.dirty[key]
+		if ok && del {
+			delete(m.dirty, key)
 		}
-		m.mu.Unlock()
+		m.missLocked()
 	}
+<<<<<<< HEAD
 	if !ok {
 		return nil, false
 	}
@@ -123,14 +128,34 @@ func (m *Map[K, V]) Load(key K) (value V, ok bool) {
 		return value, false
 	}
 	return *p, true
+=======
+	m.mu.Unlock()
+	return e, ok
+>>>>>>> benchmark-improvements-9237532504100206931
 }
 
-func (e *entry[V]) load() (value V, ok bool) {
-	p := e.p.Load()
-	if p == nil || p == (*V)(expunged) {
+func (m *Map[K, V]) Load(key K) (value V, ok bool) {
+	v, ok := m.LoadPointer(key)
+	if !ok || v == nil {
 		return value, false
 	}
-	return *p, true
+	return *v, true
+}
+
+func (m *Map[K, V]) LoadPointer(key K) (value *V, ok bool) {
+	e, ok := m.loadEntry(key, false)
+	if !ok {
+		return nil, false
+	}
+	return e.loadPointer()
+}
+
+func (e *entry[V]) loadPointer() (value *V, ok bool) {
+	p := e.p.Load()
+	if p == nil || p == (*V)(expunged) {
+		return nil, false
+	}
+	return p, true
 }
 
 func (e *entry[V]) loadPointer() (value *V, ok bool) {
@@ -186,10 +211,13 @@ func (m *Map[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
 }
 
 func (m *Map[K, V]) SwapPointer(key K, value *V) (previous *V, loaded bool) {
+<<<<<<< HEAD
 	if value == nil {
 		previous, loaded = m.LoadAndDeletePointer(key)
 		return previous, loaded
 	}
+=======
+>>>>>>> benchmark-improvements-9237532504100206931
 	read := m.loadReadOnly()
 	if e, ok := read.m[key]; ok {
 		if v, ok := e.trySwap(value); ok {
@@ -204,7 +232,10 @@ func (m *Map[K, V]) SwapPointer(key K, value *V) (previous *V, loaded bool) {
 
 func (m *Map[K, V]) swapPointerSlow(key K, value *V) (previous *V, loaded bool) {
 	m.mu.Lock()
+<<<<<<< HEAD
 	defer m.mu.Unlock()
+=======
+>>>>>>> benchmark-improvements-9237532504100206931
 	read := m.loadReadOnly()
 	if e, ok := read.m[key]; ok {
 		if e.unexpungeLocked() {
@@ -232,6 +263,10 @@ func (m *Map[K, V]) swapPointerSlow(key K, value *V) (previous *V, loaded bool) 
 		}
 		m.dirty[key] = newEntryPointer(value)
 	}
+<<<<<<< HEAD
+=======
+	m.mu.Unlock()
+>>>>>>> benchmark-improvements-9237532504100206931
 	return previous, loaded
 }
 
@@ -248,7 +283,10 @@ func (m *Map[K, V]) LoadOrStorePointer(key K, value *V) (actual *V, loaded bool)
 
 func (m *Map[K, V]) loadOrStorePointerSlow(key K, value *V) (actual *V, loaded bool) {
 	m.mu.Lock()
+<<<<<<< HEAD
 	defer m.mu.Unlock()
+=======
+>>>>>>> benchmark-improvements-9237532504100206931
 	read := m.loadReadOnly()
 	if e, ok := read.m[key]; ok {
 		if e.unexpungeLocked() {
@@ -273,6 +311,10 @@ func (m *Map[K, V]) loadOrStorePointerSlow(key K, value *V) (actual *V, loaded b
 		m.dirty[key] = ne
 		actual, loaded = ne.p.Load(), false
 	}
+<<<<<<< HEAD
+=======
+	m.mu.Unlock()
+>>>>>>> benchmark-improvements-9237532504100206931
 	return actual, loaded
 }
 
@@ -352,6 +394,7 @@ func (m *Map[K, V]) Swap(key K, value V) (previous V, loaded bool) {
 }
 
 func (m *Map[K, V]) CompareAndSwap(key K, old, new V) (swapped bool) {
+<<<<<<< HEAD
 	read := m.loadReadOnly()
 	if e, ok := read.m[key]; ok {
 		return e.tryCompareAndSwap(&old, new)
@@ -359,10 +402,14 @@ func (m *Map[K, V]) CompareAndSwap(key K, old, new V) (swapped bool) {
 		return false
 	}
 	return m.casEntrySlow(key, func(e *entry[V]) bool {
+=======
+	return m.casEntry(key, func(e *entry[V]) bool {
+>>>>>>> benchmark-improvements-9237532504100206931
 		return e.tryCompareAndSwap(&old, new)
 	})
 }
 
+<<<<<<< HEAD
 func (m *Map[K, V]) casEntrySlow(key K, tryCAS func(*entry[V]) bool) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -389,6 +436,11 @@ func (m *Map[K, V]) CompareAndSwapPointer(key K, old, new *V) (swapped bool) {
 	})
 }
 
+=======
+// tryCompareAndSwap uses reflect.DeepEqual for equality to support non-comparable
+// types (e.g. slices, maps) since Map has a V any constraint. This trades a small
+// performance overhead for correctness and safety.
+>>>>>>> benchmark-improvements-9237532504100206931
 func (e *entry[V]) tryCompareAndSwap(oldp *V, new V) (ok bool) {
 	p := e.p.Load()
 	if p == nil || p == (*V)(expunged) || !reflect.DeepEqual(*p, *oldp) {
@@ -407,6 +459,7 @@ func (e *entry[V]) tryCompareAndSwap(oldp *V, new V) (ok bool) {
 	}
 }
 
+<<<<<<< HEAD
 func (e *entry[V]) tryCompareAndSwapPointer(old, new *V) (ok bool) {
 	p := e.p.Load()
 	if p == (*V)(expunged) {
@@ -415,22 +468,52 @@ func (e *entry[V]) tryCompareAndSwapPointer(old, new *V) (ok bool) {
 	if p != old {
 		return false
 	}
+=======
+// casEntry abstracts the double-checked locking behavior for CompareAndSwap operations
+func (m *Map[K, V]) casEntry(key K, tryCAS func(*entry[V]) bool) bool {
+	read := m.loadReadOnly()
+	if e, ok := read.m[key]; ok {
+		return tryCAS(e)
+	} else if !read.amended {
+		return false
+	}
+	return m.casEntrySlow(key, tryCAS)
+}
+
+func (m *Map[K, V]) casEntrySlow(key K, tryCAS func(*entry[V]) bool) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	read := m.loadReadOnly()
+	if e, ok := read.m[key]; ok {
+		return tryCAS(e)
+	} else if e, ok := m.dirty[key]; ok {
+		swapped := tryCAS(e)
+		m.missLocked()
+		return swapped
+	}
+	return false
+}
+
+func (m *Map[K, V]) CompareAndSwapPointer(key K, old, new *V) (swapped bool) {
+	return m.casEntry(key, func(e *entry[V]) bool {
+		return e.tryCompareAndSwapPointer(old, new)
+	})
+}
+
+func (e *entry[V]) tryCompareAndSwapPointer(old, new *V) (ok bool) {
+	p := e.p.Load()
+	if p == (*V)(expunged) {
+		return false
+	}
+	if p != old {
+		return false
+	}
+>>>>>>> benchmark-improvements-9237532504100206931
 	return e.p.CompareAndSwap(old, new)
 }
 
 func (m *Map[K, V]) CompareAndDelete(key K, old V) (deleted bool) {
-	read := m.loadReadOnly()
-	e, ok := read.m[key]
-	if !ok && read.amended {
-		m.mu.Lock()
-		read = m.loadReadOnly()
-		e, ok = read.m[key]
-		if !ok && read.amended {
-			e, ok = m.dirty[key]
-			m.missLocked()
-		}
-		m.mu.Unlock()
-	}
+	e, ok := m.loadEntry(key, false)
 	for ok {
 		p := e.p.Load()
 		if p == nil || p == (*V)(expunged) || !reflect.DeepEqual(*p, old) {

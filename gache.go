@@ -117,6 +117,7 @@ func newMap[V any]() (m *Map[string, value[V]]) {
 	return new(Map[string, value[V]])
 }
 
+<<<<<<< HEAD
 func getShardID(key string, kl uint64) (id uint64) {
 	lk := uint64(len(key))
 	if lk == 0 {
@@ -132,13 +133,27 @@ func getShardID(key string, kl uint64) (id uint64) {
 		}
 		return xxh3.HashString(key[:kl]) & mask
 	}
+=======
+func getShardID(key string, kl uint64) uint64 {
+	lk := uint64(len(key))
+	if lk == 0 {
+		return 0
+	}
+	if kl != 0 {
+		lk = min(lk, kl)
+	}
+>>>>>>> benchmark-improvements-9237532504100206931
 	if lk == 1 {
 		return uint64(key[0]) & mask
 	}
 	if lk <= 32 {
+<<<<<<< HEAD
 		return maphash.String(hashSeed, key) & mask
+=======
+		return maphash.String(hashSeed, key[:lk]) & mask
+>>>>>>> benchmark-improvements-9237532504100206931
 	}
-	return xxh3.HashString(key) & mask
+	return xxh3.HashString(key[:lk]) & mask
 }
 
 // isValid checks expiration of value
@@ -225,7 +240,11 @@ func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 		case <-ctx.Done():
 			return m
 		default:
+<<<<<<< HEAD
 			g.shards[i].RangePointer(func(k string, v *value[V]) bool {
+=======
+			g.shards[i].Range(func(k string, v value[V]) bool {
+>>>>>>> benchmark-improvements-9237532504100206931
 				if v.isValid() {
 					m[k] = v.val
 				} else {
@@ -240,8 +259,13 @@ func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
 
 // get returns value & exists from key
 func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
+<<<<<<< HEAD
 	var val *value[V]
 	val, ok = g.shards[getShardID(key, g.maxKeyLength)].LoadPointer(key)
+=======
+	var val value[V]
+	val, ok = g.shards[getShardID(key, g.maxKeyLength)].Load(key)
+>>>>>>> benchmark-improvements-9237532504100206931
 	if !ok {
 		return v, 0, false
 	}
