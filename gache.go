@@ -370,7 +370,12 @@ func (g *gache[V]) Len() int {
 	for i := range g.shards {
 		l += atomic.LoadUint64(&g.shards[i].l)
 	}
-	return *(*int)(unsafe.Pointer(&l))
+	// Convert from uint64 to int in a safe, portable way with clamping.
+	maxInt := int(^uint(0) >> 1)
+	if l > uint64(maxInt) {
+		return maxInt
+	}
+	return int(l)
 }
 
 func (g *gache[V]) Size() (size uintptr) {
