@@ -146,6 +146,10 @@ func (m *Map[K, V]) Store(key K, value V) {
 }
 
 func (m *Map[K, V]) StorePointer(key K, value *V) {
+	if value == nil {
+		m.Delete(key)
+		return
+	}
 	m.SwapPointer(key, value)
 }
 
@@ -186,6 +190,10 @@ func (m *Map[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
 }
 
 func (m *Map[K, V]) SwapPointer(key K, value *V) (previous *V, loaded bool) {
+	if value == nil {
+		previous, loaded = m.LoadAndDeletePointer(key)
+		return previous, loaded
+	}
 	read := m.loadReadOnly()
 	if e, ok := read.m[key]; ok {
 		if v, ok := e.trySwap(value); ok {
