@@ -1,6 +1,7 @@
 package gache
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -461,4 +462,44 @@ type dummyData struct {
 	Gender  int32
 	Company string
 	Skills  []string
+}
+
+// BenchmarkDeleteExpired measures the throughput of the periodic cleanup sweep.
+// It pre-fills the cache with expired entries so that every shard has work to do.
+func BenchmarkDeleteExpired(b *testing.B) {
+	const numKeys = 10000
+	ctx := context.Background()
+	g := New[string](
+		WithDefaultExpiration[string](1 * time.Nanosecond),
+	)
+	// Pre-fill with keys that will expire immediately.
+	for i := range numKeys {
+		g.SetWithExpire(strconv.Itoa(i), "v", 1*time.Nanosecond)
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for range b.N {
+		g.DeleteExpired(ctx)
+		// Refill so next iteration has something to delete.
+		for i := range numKeys {
+			g.SetWithExpire(strconv.Itoa(i), "v", 1*time.Nanosecond)
+		}
+	}
+}
+
+// BenchmarkRange measures the throughput of iterating all cache entries.
+func BenchmarkRange(b *testing.B) {
+	const numKeys = 10000
+	ctx := context.Background()
+	g := New[string](
+		WithDefaultExpiration[string](NoTTL),
+	)
+	for i := range numKeys {
+		g.Set(strconv.Itoa(i), "v")
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for range b.N {
+		g.Range(ctx, func(_ string, _ string, _ int64) bool { return true })
+	}
 }
