@@ -394,16 +394,21 @@ func (v *value[V]) Size() (size uintptr) {
 // ExtendExpire extends the expiration of the key by addExp duration.
 func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
-	val, ok := shard.Load(key)
-	if !ok {
-		return
+	for {
+		val, ok := shard.Load(key)
+		if !ok {
+			return
+		}
+		if !val.isValid() {
+			g.expiration(key)
+			return
+		}
+		newVal := val
+		newVal.expire += int64(addExp)
+		if shard.CompareAndSwap(key, val, newVal) {
+			return
+		}
 	}
-	if !val.isValid() {
-		g.expiration(key)
-		return
-	}
-	val.expire += int64(addExp)
-	shard.StoreIfPresent(key, val)
 }
 
 // GetRefresh returns value & exists from key and refreshes the expiration.
@@ -414,17 +419,21 @@ func (g *gache[V]) GetRefresh(key string) (V, bool) {
 // GetRefreshWithDur returns value & exists from key and refreshes the expiration with d duration.
 func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool) {
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
-	val, ok := shard.Load(key)
-	if !ok {
-		return v, false
+	for {
+		val, ok := shard.Load(key)
+		if !ok {
+			return v, false
+		}
+		if !val.isValid() {
+			g.expiration(key)
+			return v, false
+		}
+		newVal := val
+		newVal.expire = fastime.UnixNanoNow() + int64(d)
+		if shard.CompareAndSwap(key, val, newVal) {
+			return val.val, true
+		}
 	}
-	if !val.isValid() {
-		g.expiration(key)
-		return v, false
-	}
-	val.expire = fastime.UnixNanoNow() + int64(d)
-	shard.StoreIfPresent(key, val)
-	return val.val, true
 }
 
 // GetWithIgnoredExpire returns value & exists from key, ignoring expiration.
@@ -480,16 +489,21 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 	newVal := value[V]{val: val, expire: exp}
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
 
-	actual, loaded := shard.LoadOrStore(key, newVal)
-	if !loaded {
-		return // stored successfully
-	}
+	for {
+		actual, loaded := shard.LoadOrStore(key, newVal)
+		if !loaded {
+			return // stored successfully
+		}
 
-	// Key exists. If the existing value is still valid, do nothing.
-	if actual.isValid() {
-		return
-	}
+		// Key exists. If the existing value is still valid, do nothing.
+		if actual.isValid() {
+			return
+		}
 
-	// Existing value is expired. Replace it.
-	shard.Store(key, newVal)
+		// Existing value is expired. Atomically replace it.
+		if shard.CompareAndSwap(key, actual, newVal) {
+			return
+		}
+		// CAS failed, retry.
+	}
 }

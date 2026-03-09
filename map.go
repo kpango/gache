@@ -167,20 +167,6 @@ func (m *Map[K, V]) Range(f func(key K, value V) bool) {
 	}
 }
 
-// StoreIfPresent atomically stores value for key only if the key already exists.
-// Returns true if the store was performed.
-func (m *Map[K, V]) StoreIfPresent(key K, value V) (stored bool) {
-	m.mu.Lock()
-	if m.data != nil {
-		if _, exists := m.data[key]; exists {
-			m.data[key] = value
-			stored = true
-		}
-	}
-	m.mu.Unlock()
-	return stored
-}
-
 func (m *Map[K, V]) Clear() {
 	m.mu.Lock()
 	clear(m.data)
