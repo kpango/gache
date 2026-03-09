@@ -34,35 +34,33 @@ import (
 	"unsafe"
 )
 
-// TestGacheMapSizeWithExpungedEntries verifies that Size() does not count the
-// value size for expunged entries (entries whose pointer equals the shared
-// expunged marker).  An entry becomes expunged when it is deleted while in the
-// read-only map and then dirtyLocked() runs: nil → expunged transition.
-func TestGacheMapSizeWithExpungedEntries(t *testing.T) {
-	// Store a key, delete it (sets p → nil), then trigger a dirty-promotion
-	// cycle so that dirtyLocked() marks the nil entry as expunged.
+// TestGacheMapSizeWithDeletedEntries verifies that Size() behaves correctly
+// when entries are stored and then deleted.
+func TestGacheMapSizeWithDeletedEntries(t *testing.T) {
 	m := new(Map[int, int])
+
+	sizeEmpty := m.Size()
+	if sizeEmpty == 0 {
+		t.Errorf("Size() returned 0 for empty Map")
+	}
+
 	m.Store(1, 100)
 	m.Delete(1)
 
-	// Force a dirty-map promotion: storing a new key while the read map is
-	// amended causes dirtyLocked() to run and expunge nil entries.
-	m.Store(2, 200)
-
-	sizeBefore := m.Size()
-
-	// Add more entries with values to make sure the size grows.
-	m.Store(3, 300)
-	sizeAfter := m.Size()
-
-	if sizeAfter <= sizeBefore {
-		t.Errorf("Size() should increase after adding an entry: before=%d after=%d", sizeBefore, sizeAfter)
+	// After deleting the only entry, the internal map may still have
+	// allocated buckets, so size should still be positive.
+	sizeAfterDelete := m.Size()
+	if sizeAfterDelete == 0 {
+		t.Errorf("Size() returned 0 after Store+Delete")
 	}
 
-	// Expunged entries must not contribute value size.  We verify indirectly
-	// by checking that the map is consistent (no panic / negative size).
-	if sizeBefore == 0 {
-		t.Errorf("Size() returned 0 unexpectedly")
+	// Store many entries to trigger map growth, then verify size increases.
+	for i := range 1000 {
+		m.Store(i, i)
+	}
+	sizeLarge := m.Size()
+	if sizeLarge <= sizeAfterDelete {
+		t.Errorf("Size() should increase after adding many entries: small=%d large=%d", sizeAfterDelete, sizeLarge)
 	}
 }
 
@@ -75,16 +73,9 @@ func TestGacheMapSize(t *testing.T) {
 		t.Errorf("gacheMap.Size() should be positive, got %d", size)
 	}
 
-	m := make(map[int]*entry[int])
-	m[1] = newEntry(1)
-
-	expectedSize := unsafe.Sizeof(gacheMap.mu) +
-		unsafe.Sizeof(gacheMap.read) +
-		unsafe.Sizeof(gacheMap.misses) +
-		mapSize(gacheMap.dirty)
-
-	// Allow for some slack due to readOnly struct and entry sizes
-	if size < expectedSize {
-		t.Errorf("gacheMap.Size() %d is smaller than expected lower bound %d", size, expectedSize)
+	// The size should at least include the Map struct itself.
+	minSize := unsafe.Sizeof(*gacheMap)
+	if size < minSize {
+		t.Errorf("gacheMap.Size() %d is smaller than expected lower bound %d", size, minSize)
 	}
 }
