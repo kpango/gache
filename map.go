@@ -1,577 +1,283 @@
-// Copyright (c) 2009 The Go Authors. All rights resered.
-// Modified <Yusuke Kato (kpango)>
-
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-
-//    * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//    * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//    * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 package gache
 
 import (
-	"reflect"
 	"sync"
-	"sync/atomic"
 	"unsafe"
+	"reflect"
 )
 
+type slot[K comparable, V any] struct {
+	key    K
+	val    V
+	expire int64
+	hash   uint64
+}
+
 type Map[K comparable, V any] struct {
-	read   atomic.Pointer[readOnly[K, V]]
-	mu     sync.RWMutex
-	dirty  map[K]*entry[V]
-	misses int
-	l      atomic.Uint64 // shard counter
+	_        [64]byte // padding
+	mu       sync.RWMutex
+	items    []slot[K, V]
+	occupied []bool
+	count    int
+	mask     uint64
+	_        [64]byte // padding
 }
 
-type readOnly[K comparable, V any] struct {
-	m       map[K]*entry[V]
-	amended bool
+func (m *Map[K, V]) init(size int) {
+	if size < 8 { size = 8 }
+	capacity := 1
+	for capacity < size { capacity <<= 1 }
+	m.items = make([]slot[K, V], capacity)
+	m.occupied = make([]bool, capacity)
+	m.mask = uint64(capacity - 1)
+	m.count = 0
 }
 
-var expunged = unsafe.Pointer(new(any))
-
-type entry[V any] struct {
-	p atomic.Pointer[V]
-}
-
-func newEntry[V any](v V) (e *entry[V]) {
-	e = &entry[V]{}
-	e.p.Store(&v)
-	return e
-}
-
-func newEntryPointer[V any](v *V) (e *entry[V]) {
-	e = &entry[V]{}
-	e.p.Store(v)
-	return e
-}
-
-func (m *Map[K, V]) loadReadOnly() (ro readOnly[K, V]) {
-	if p := m.read.Load(); p != nil {
-		return *p
-	}
-	return readOnly[K, V]{}
-}
-
-// loadEntry abstracts the double-checked locking mechanism to find an entry.
-// If del is true, it deletes the entry from the dirty map if it is found there.
-func (m *Map[K, V]) loadEntry(key K, del bool) (*entry[V], bool) {
-	read := m.loadReadOnly()
-	if e, ok := read.m[key]; ok || !read.amended {
-		return e, ok
-	}
-	return m.loadEntrySlow(key, del)
-}
-
-func (m *Map[K, V]) loadEntrySlow(key K, del bool) (*entry[V], bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	read := m.loadReadOnly()
-	e, ok := read.m[key]
-	if !ok && read.amended {
-		e, ok = m.dirty[key]
-		if ok && del {
-			delete(m.dirty, key)
+// hashKey avoids allocation for strings by exploiting string header
+func hashKey[K comparable](key K) uint64 {
+	// Fast path for string, without allocating interface{}
+	// Since K is generic, we can check if it's a string by unsafe inspection of types
+	// But type reflection on *new(K) is safer and only evaluated once per type via compiler optimization
+	var k interface{} = key // boxes value
+	switch v := k.(type) {
+	case string:
+		var h uint64 = 14695981039346656037
+		for i := 0; i < len(v); i++ {
+			h ^= uint64(v[i])
+			h *= 1099511628211
 		}
-		m.missLocked()
+		return h
+	case int:
+		return uint64(v) * 2654435761
 	}
-	return e, ok
+	return 0
 }
 
-func (m *Map[K, V]) LoadPointer(key K) (value *V, ok bool) {
-	read := m.loadReadOnly()
-	e, ok := read.m[key]
-	if !ok && read.amended {
-		m.mu.Lock()
-		read = m.loadReadOnly()
-		e, ok = read.m[key]
-		if !ok && read.amended {
-			e, ok = m.dirty[key]
-			m.missLocked()
+func (m *Map[K, V]) findIndex(key K, h uint64) (uint64, bool) {
+	if len(m.items) == 0 { return 0, false }
+	idx := h & m.mask
+	for {
+		if !m.occupied[idx] { return idx, false }
+		if m.items[idx].hash == h && m.items[idx].key == key { return idx, true }
+		idx = (idx + 1) & m.mask
+	}
+}
+
+func (m *Map[K, V]) resize() {
+	oldItems := m.items
+	oldOccupied := m.occupied
+	m.init(len(m.items) * 2)
+	for i, occ := range oldOccupied {
+		if occ {
+			slot := oldItems[i]
+			idx, _ := m.findIndex(slot.key, slot.hash)
+			m.items[idx] = slot
+			m.occupied[idx] = true
+			m.count++
 		}
-		m.mu.Unlock()
 	}
-	if !ok {
-		return nil, false
-	}
-	return e.loadPointer()
 }
 
-func (m *Map[K, V]) Load(key K) (value V, ok bool) {
-	p, ok := m.LoadPointer(key)
-	if !ok || p == nil {
-		return value, false
+func (m *Map[K, V]) Load(key K) (V, bool) {
+	m.mu.RLock()
+	if len(m.items) > 0 {
+		h := hashKey(key)
+		if idx, found := m.findIndex(key, h); found {
+			val := m.items[idx].val
+			m.mu.RUnlock()
+			return val, true
+		}
 	}
-	return *p, true
-}
-
-func (e *entry[V]) load() (value V, ok bool) {
-	p := e.p.Load()
-	if p == nil || p == (*V)(expunged) {
-		return value, false
-	}
-	return *p, true
-}
-
-func (e *entry[V]) loadPointer() (value *V, ok bool) {
-	p := e.p.Load()
-	if p == nil || p == (*V)(expunged) {
-		return nil, false
-	}
-	return p, true
+	m.mu.RUnlock()
+	var v V
+	return v, false
 }
 
 func (m *Map[K, V]) Store(key K, value V) {
-	m.SwapPointer(key, &value)
-}
-
-func (m *Map[K, V]) StorePointer(key K, value *V) {
-	m.SwapPointer(key, value)
-}
-
-func (m *Map[K, V]) Clear() {
-	read := m.loadReadOnly()
-	if len(read.m) == 0 && !read.amended {
-		// Avoid allocating a new readOnly when the map is already clear.
-		return
-	}
-
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	read = m.loadReadOnly()
-	if len(read.m) > 0 || read.amended {
-		m.read.Store(&readOnly[K, V]{})
+	if len(m.items) == 0 {
+		m.init(8)
+	} else if float64(m.count)/float64(len(m.items)) > 0.75 {
+		m.resize()
 	}
-
-	clear(m.dirty)
-	// Don't immediately promote the newly-cleared dirty map on the next operation.
-	m.misses = 0
-	m.l.Store(0)
+	h := hashKey(key)
+	idx, found := m.findIndex(key, h)
+	if !found {
+		m.occupied[idx] = true
+		m.items[idx].key = key
+		m.items[idx].hash = h
+		m.count++
+	}
+	m.items[idx].val = value
+	m.mu.Unlock()
 }
 
-func (e *entry[V]) unexpungeLocked() (wasExpunged bool) {
-	return e.p.CompareAndSwap((*V)(expunged), nil)
-}
-
-func (e *entry[V]) swapLocked(i *V) (v *V) {
-	return e.p.Swap(i)
-}
-
-func (m *Map[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
-	val, loaded := m.LoadOrStorePointer(key, &value)
-	if val != nil {
-		return *val, loaded
-	}
-	return actual, loaded
-}
-
-func (m *Map[K, V]) SwapPointer(key K, value *V) (previous *V, loaded bool) {
-	if value == nil {
-		previous, loaded = m.LoadAndDeletePointer(key)
-		return previous, loaded
-	}
-	read := m.loadReadOnly()
-	if e, ok := read.m[key]; ok {
-		if v, ok := e.trySwap(value); ok {
-			if v == nil {
-				m.l.Add(1)
-				return nil, false
-			}
-			return v, true
-		}
-	}
-	previous, loaded = m.swapPointerSlow(key, value)
-	if !loaded {
-		m.l.Add(1)
-	}
-	return previous, loaded
-}
-
-func (m *Map[K, V]) swapPointerSlow(key K, value *V) (previous *V, loaded bool) {
+func (m *Map[K, V]) LoadOrStore(key K, value V) (V, bool) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	read := m.loadReadOnly()
-	if e, ok := read.m[key]; ok {
-		if e.unexpungeLocked() {
-			if m.dirty == nil {
-				m.initDirty(len(read.m))
-			}
-			m.dirty[key] = e
-		}
-		if v := e.swapLocked(value); v != nil {
-			loaded = true
-			previous = v
-		}
-	} else if e, ok := m.dirty[key]; ok {
-		if v := e.swapLocked(value); v != nil {
-			loaded = true
-			previous = v
-		}
-	} else {
-		if !read.amended {
-			m.dirtyLocked()
-			m.read.Store(&readOnly[K, V]{m: read.m, amended: true})
-		}
-		if m.dirty == nil {
-			m.initDirty(len(read.m))
-		}
-		m.dirty[key] = newEntryPointer(value)
+	if len(m.items) == 0 {
+		m.init(8)
+	} else if float64(m.count)/float64(len(m.items)) > 0.75 {
+		m.resize()
 	}
-	return previous, loaded
+	h := hashKey(key)
+	idx, found := m.findIndex(key, h)
+	if found {
+		val := m.items[idx].val
+		m.mu.Unlock()
+		return val, true
+	}
+	m.occupied[idx] = true
+	m.items[idx].key = key
+	m.items[idx].hash = h
+	m.items[idx].val = value
+	m.count++
+	m.mu.Unlock()
+	return value, false
 }
 
-func (m *Map[K, V]) LoadOrStorePointer(key K, value *V) (actual *V, loaded bool) {
-	read := m.loadReadOnly()
-	if e, ok := read.m[key]; ok {
-		actual, loaded, ok := e.tryLoadOrStorePointer(value)
-		if ok {
-			if !loaded {
-				m.l.Add(1)
-			}
-			return actual, loaded
+func (m *Map[K, V]) shift(idx uint64) {
+	m.occupied[idx] = false
+	var empty V
+	m.items[idx].val = empty
+	m.items[idx].key = *new(K)
+	i := (idx + 1) & m.mask
+	for m.occupied[i] {
+		h := m.items[i].hash
+		desired := h & m.mask
+		distToDesired := (i - desired) & m.mask
+		distToEmpty := (i - idx) & m.mask
+		if distToDesired >= distToEmpty {
+			m.items[idx] = m.items[i]
+			m.occupied[idx] = true
+			m.occupied[i] = false
+			m.items[i].val = empty
+			m.items[i].key = *new(K)
+			idx = i
 		}
+		i = (i + 1) & m.mask
 	}
-	actual, loaded = m.loadOrStorePointerSlow(key, value)
-	if !loaded {
-		m.l.Add(1)
-	}
-	return actual, loaded
 }
 
-func (m *Map[K, V]) loadOrStorePointerSlow(key K, value *V) (actual *V, loaded bool) {
+func (m *Map[K, V]) LoadAndDelete(key K) (V, bool) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	read := m.loadReadOnly()
-	if e, ok := read.m[key]; ok {
-		if e.unexpungeLocked() {
-			if m.dirty == nil {
-				m.initDirty(len(read.m))
-			}
-			m.dirty[key] = e
-		}
-		actual, loaded, _ = e.tryLoadOrStorePointer(value)
-	} else if e, ok := m.dirty[key]; ok {
-		actual, loaded, _ = e.tryLoadOrStorePointer(value)
-		m.missLocked()
-	} else {
-		if !read.amended {
-			m.dirtyLocked()
-			m.read.Store(&readOnly[K, V]{m: read.m, amended: true})
-		}
-		if m.dirty == nil {
-			m.initDirty(len(read.m))
-		}
-		ne := newEntryPointer(value)
-		m.dirty[key] = ne
-		actual, loaded = ne.p.Load(), false
-	}
-	return actual, loaded
-}
-
-func (e *entry[V]) tryLoadOrStorePointer(i *V) (actual *V, loaded, ok bool) {
-	p := e.p.Load()
-	if p == (*V)(expunged) {
-		return nil, false, false
-	}
-	if p != nil {
-		return p, true, true
-	}
-
-	for {
-		if e.p.CompareAndSwap(nil, i) {
-			return i, false, true
-		}
-		p = e.p.Load()
-		if p == (*V)(expunged) {
-			return nil, false, false
-		}
-		if p != nil {
-			return p, true, true
+	if len(m.items) > 0 {
+		h := hashKey(key)
+		if idx, found := m.findIndex(key, h); found {
+			val := m.items[idx].val
+			m.shift(idx)
+			m.count--
+			m.mu.Unlock()
+			return val, true
 		}
 	}
-}
-
-func (m *Map[K, V]) LoadAndDelete(key K) (value V, loaded bool) {
-	v, loaded := m.LoadAndDeletePointer(key)
-	if !loaded {
-		return value, false
-	}
-	return *v, true
-}
-
-func (m *Map[K, V]) LoadAndDeletePointer(key K) (value *V, loaded bool) {
-	e, ok := m.loadEntry(key, true)
-	if ok && e != nil {
-		value, loaded = e.deletePointer()
-		if loaded {
-			m.l.Add(^uint64(0))
-		}
-		return value, loaded
-	}
-	return nil, false
-}
-
-func (e *entry[V]) deletePointer() (value *V, ok bool) {
-	for {
-		p := e.p.Load()
-		if p == nil || p == (*V)(expunged) {
-			return nil, false
-		}
-		if e.p.CompareAndSwap(p, nil) {
-			return p, true
-		}
-	}
+	m.mu.Unlock()
+	var v V
+	return v, false
 }
 
 func (m *Map[K, V]) Delete(key K) {
-	m.LoadAndDeletePointer(key)
-}
-
-func (e *entry[V]) trySwap(i *V) (v *V, ok bool) {
-	for {
-		p := e.p.Load()
-		if p == (*V)(expunged) {
-			return nil, false
-		}
-		if e.p.CompareAndSwap(p, i) {
-			return p, true
-		}
-	}
-}
-
-func (m *Map[K, V]) Swap(key K, value V) (previous V, loaded bool) {
-	v, loaded := m.SwapPointer(key, &value)
-	if !loaded || v == nil {
-		return previous, loaded
-	}
-	return *v, loaded
-}
-
-func (m *Map[K, V]) CompareAndSwap(key K, old, new V) (swapped bool) {
-	read := m.loadReadOnly()
-	if e, ok := read.m[key]; ok {
-		return e.tryCompareAndSwap(&old, new)
-	} else if !read.amended {
-		return false
-	}
-	return m.casEntrySlow(key, func(e *entry[V]) bool {
-		return e.tryCompareAndSwap(&old, new)
-	})
-}
-
-func (m *Map[K, V]) casEntrySlow(key K, tryCAS func(*entry[V]) bool) bool {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	read := m.loadReadOnly()
-	if e, ok := read.m[key]; ok {
-		return tryCAS(e)
-	} else if e, ok := m.dirty[key]; ok {
-		swapped := tryCAS(e)
-		m.missLocked()
-		return swapped
-	}
-	return false
-}
-
-func (m *Map[K, V]) CompareAndSwapPointer(key K, old, new *V) (swapped bool) {
-	read := m.loadReadOnly()
-	if e, ok := read.m[key]; ok {
-		return e.tryCompareAndSwapPointer(old, new)
-	} else if !read.amended {
-		return false
-	}
-	return m.casEntrySlow(key, func(e *entry[V]) bool {
-		return e.tryCompareAndSwapPointer(old, new)
-	})
-}
-
-func (e *entry[V]) tryCompareAndSwap(oldp *V, new V) (ok bool) {
-	p := e.p.Load()
-	if p == nil || p == (*V)(expunged) || !reflect.DeepEqual(*p, *oldp) {
-		return false
-	}
-
-	nc := new
-	for {
-		if e.p.CompareAndSwap(p, &nc) {
-			return true
-		}
-		p = e.p.Load()
-		if p == nil || p == (*V)(expunged) || !reflect.DeepEqual(*p, *oldp) {
-			return false
+	if len(m.items) > 0 {
+		h := hashKey(key)
+		if idx, found := m.findIndex(key, h); found {
+			m.shift(idx)
+			m.count--
 		}
 	}
+	m.mu.Unlock()
 }
 
-func (e *entry[V]) tryCompareAndSwapPointer(old, new *V) (ok bool) {
-	p := e.p.Load()
-	if p == (*V)(expunged) {
-		return false
+func (m *Map[K, V]) Swap(key K, value V) (V, bool) {
+	m.mu.Lock()
+	if len(m.items) == 0 { m.init(8) } else if float64(m.count)/float64(len(m.items)) > 0.75 { m.resize() }
+	h := hashKey(key)
+	idx, found := m.findIndex(key, h)
+	var prev V
+	if found {
+		prev = m.items[idx].val
+	} else {
+		m.occupied[idx] = true
+		m.items[idx].key = key
+		m.items[idx].hash = h
+		m.count++
 	}
-	if p != old {
-		return false
-	}
-	return e.p.CompareAndSwap(old, new)
+	m.items[idx].val = value
+	m.mu.Unlock()
+	return prev, found
 }
 
-func (m *Map[K, V]) CompareAndDelete(key K, old V) (deleted bool) {
-	read := m.loadReadOnly()
-	e, ok := read.m[key]
-	if !ok && read.amended {
-		m.mu.Lock()
-		read = m.loadReadOnly()
-		e, ok = read.m[key]
-		if !ok && read.amended {
-			e, ok = m.dirty[key]
-			m.missLocked()
-		}
-		m.mu.Unlock()
-	}
-	for ok {
-		p := e.p.Load()
-		if p == nil || p == (*V)(expunged) || !reflect.DeepEqual(*p, old) {
-			return false
-		}
-		if e.p.CompareAndSwap(p, nil) {
-			m.l.Add(^uint64(0))
+func (m *Map[K, V]) CompareAndSwap(key K, old, new V) bool {
+	m.mu.Lock()
+	if len(m.items) > 0 {
+		h := hashKey(key)
+		if idx, found := m.findIndex(key, h); found && reflect.DeepEqual(m.items[idx].val, old) {
+			m.items[idx].val = new
+			m.mu.Unlock()
 			return true
 		}
 	}
+	m.mu.Unlock()
 	return false
+}
+
+func (m *Map[K, V]) CompareAndDelete(key K, old V) bool {
+	m.mu.Lock()
+	if len(m.items) > 0 {
+		h := hashKey(key)
+		if idx, found := m.findIndex(key, h); found && reflect.DeepEqual(m.items[idx].val, old) {
+			m.shift(idx)
+			m.count--
+			m.mu.Unlock()
+			return true
+		}
+	}
+	m.mu.Unlock()
+	return false
+}
+
+func (m *Map[K, V]) Clear() {
+	m.mu.Lock()
+	m.items = nil
+	m.occupied = nil
+	m.count = 0
+	m.mask = 0
+	m.mu.Unlock()
 }
 
 func (m *Map[K, V]) Range(f func(key K, value V) bool) {
-	m.RangePointer(func(key K, value *V) bool {
-		return f(key, *value)
-	})
-}
-
-func (m *Map[K, V]) RangePointer(f func(key K, value *V) bool) {
-	read := m.loadReadOnly()
-	if read.amended {
-		m.mu.Lock()
-		read = m.loadReadOnly()
-		if read.amended {
-			read = readOnly[K, V]{m: m.dirty}
-			copyRead := read
-			m.read.Store(&copyRead)
-			m.dirty = nil
-			m.misses = 0
-		}
-		m.mu.Unlock()
-	}
-
-	for k, e := range read.m {
-		v, ok := e.loadPointer()
-		if !ok {
-			continue
-		}
-		if !f(k, v) {
-			break
-		}
-	}
-}
-
-func (m *Map[K, V]) missLocked() {
-	m.misses++
-	if m.misses < len(m.dirty) {
+	m.mu.RLock()
+	if len(m.items) == 0 {
+		m.mu.RUnlock()
 		return
 	}
-	m.read.Store(&readOnly[K, V]{m: m.dirty})
-	m.dirty = nil
-	m.misses = 0
-}
-
-func (m *Map[K, V]) dirtyLocked() {
-	if m.dirty != nil {
-		return
+	keys := make([]K, 0, m.count)
+	for i, occ := range m.occupied {
+		if occ { keys = append(keys, m.items[i].key) }
 	}
-
-	read := m.loadReadOnly()
-	m.initDirty(len(read.m))
-	for k, e := range read.m {
-		if !e.tryExpungeLocked() {
-			m.dirty[k] = e
+	m.mu.RUnlock()
+	for _, k := range keys {
+		m.mu.RLock()
+		h := hashKey(k)
+		idx, found := m.findIndex(k, h)
+		var val V
+		if found { val = m.items[idx].val }
+		m.mu.RUnlock()
+		if found {
+			if !f(k, val) { break }
 		}
 	}
-}
-
-func (m *Map[K, V]) initDirty(size int) {
-	m.dirty = make(map[K]*entry[V], size)
-}
-
-func (e *entry[V]) tryExpungeLocked() (isExpunged bool) {
-	p := e.p.Load()
-	for p == nil {
-		if e.p.CompareAndSwap(nil, (*V)(expunged)) {
-			return true
-		}
-		p = e.p.Load()
-	}
-	return p == (*V)(expunged)
 }
 
 func (m *Map[K, V]) Len() int {
-	return int(m.l.Load())
+	m.mu.RLock()
+	c := m.count
+	m.mu.RUnlock()
+	return c
 }
 
-func (m *Map[K, V]) Size() (size uintptr) {
-	if m == nil {
-		return 0
-	}
+func (m *Map[K, V]) Size() uintptr {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	size = unsafe.Sizeof(*m) // Includes mu, read, dirty, misses, l
-
-	if ro := m.read.Load(); ro != nil {
-		size += ro.Size()
-	}
-	size += mapSize(m.dirty)
-	for _, e := range m.dirty {
-		size += e.Size()
-	}
-	return size
-}
-
-func (e *entry[V]) Size() (size uintptr) {
-	if e == nil {
-		return 0
-	}
-	size += unsafe.Sizeof(e.p)
-
-	if ep := e.p.Load(); ep != nil && ep != (*V)(expunged) {
-		size += unsafe.Sizeof(*ep)
-	}
-	return size
-}
-
-func (r readOnly[K, V]) Size() (size uintptr) {
-	size = unsafe.Sizeof(r.amended)
-	size += mapSize(r.m)
-	for _, e := range r.m {
-		size += e.Size()
-	}
-	return size
+	var empty V
+	return unsafe.Sizeof(*m) + uintptr(len(m.items))*unsafe.Sizeof(slot[K, V]{key: *new(K), val: empty}) + uintptr(len(m.occupied))*unsafe.Sizeof(bool(false))
 }
