@@ -109,6 +109,8 @@ func newMap[V any]() (m *Map[string, value[V]]) {
 	return m
 }
 
+// truncateKey returns the first kl bytes of the key for shard ID computation,
+// or the full key if kl is 0 or exceeds the key length.
 func truncateKey(key string, kl uint64) string {
 	if kl != 0 && kl < uint64(len(key)) {
 		return key[:kl]
@@ -116,6 +118,8 @@ func truncateKey(key string, kl uint64) string {
 	return key
 }
 
+// getShardID computes the shard index by hashing key with xxh3
+// and masking the result to the valid shard range [0, mask].
 func getShardID(key string) uint64 {
 	return xxh3.HashString(key) & mask
 }
