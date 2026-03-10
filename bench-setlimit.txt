@@ -1,0 +1,31 @@
+goos: linux
+goarch: amd64
+pkg: github.com/kpango/gache/v2
+cpu: Intel(R) Core(TM) i5-14600K
+BenchmarkDeleteExpired-20    	      88	  13725064 ns/op	  409444 B/op	   18145 allocs/op
+BenchmarkDeleteExpired-20    	      75	  13840866 ns/op	  412136 B/op	   18154 allocs/op
+BenchmarkDeleteExpired-20    	      87	  13608318 ns/op	  410182 B/op	   18146 allocs/op
+BenchmarkDeleteExpired-20    	      86	  13543246 ns/op	  409512 B/op	   18146 allocs/op
+BenchmarkDeleteExpired-20    	      97	  13659982 ns/op	  409794 B/op	   18141 allocs/op
+BenchmarkRange-20            	     156	   7473001 ns/op	  361948 B/op	    8223 allocs/op
+BenchmarkRange-20            	     159	   7507976 ns/op	  361337 B/op	    8222 allocs/op
+BenchmarkRange-20            	     159	   7501453 ns/op	  361251 B/op	    8222 allocs/op
+BenchmarkRange-20            	     160	   7578035 ns/op	  361276 B/op	    8221 allocs/op
+BenchmarkRange-20            	     157	   7518113 ns/op	  361284 B/op	    8222 allocs/op
+BenchmarkRange/*gache_test.DeepCopyMap-20         	 2216241	       539.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRange/*gache_test.DeepCopyMap-20         	 2264528	       543.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRange/*gache_test.DeepCopyMap-20         	 2267412	       550.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRange/*gache_test.DeepCopyMap-20         	 1935976	       523.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRange/*gache_test.DeepCopyMap-20         	 2262439	       521.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRange/*gache_test.RWMutexMap-20          	   27984	     38977 ns/op	   18432 B/op	       1 allocs/op
+BenchmarkRange/*gache_test.RWMutexMap-20          	   31275	     41605 ns/op	   18432 B/op	       1 allocs/op
+BenchmarkRange/*gache_test.RWMutexMap-20          	   24548	     42159 ns/op	   18432 B/op	       1 allocs/op
+BenchmarkRange/*gache_test.RWMutexMap-20          	   29424	     40765 ns/op	   18432 B/op	       1 allocs/op
+BenchmarkRange/*gache_test.RWMutexMap-20          	   26792	     38671 ns/op	   18432 B/op	       1 allocs/op
+BenchmarkRange/*gache.Map[interface_{},interface_{}]-20         	 1716264	       630.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRange/*gache.Map[interface_{},interface_{}]-20         	 1900498	       626.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRange/*gache.Map[interface_{},interface_{}]-20         	 1910472	       641.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRange/*gache.Map[interface_{},interface_{}]-20         	 1661522	       637.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRange/*gache.Map[interface_{},interface_{}]-20         	 1911070	       648.6 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/kpango/gache/v2	54.967s
