@@ -148,35 +148,35 @@ func benchmark(b *testing.B, data []keyValue,
 	}
 }
 
-func BenchmarkDefaultMapSetSmallDataNoTTL(b *testing.B) {
+func BenchmarkDefaultMapSmallDataNoTTL(b *testing.B) {
 	m := NewDefault()
 	benchmark(b, smallData, NoTTL,
 		func(k, v string, t time.Duration) { m.Set(k, v) },
 		func(k string) { m.Get(k) })
 }
 
-func BenchmarkDefaultMapSetBigDataNoTTL(b *testing.B) {
+func BenchmarkDefaultMapBigDataNoTTL(b *testing.B) {
 	m := NewDefault()
 	benchmark(b, bigData, NoTTL,
 		func(k, v string, t time.Duration) { m.Set(k, v) },
 		func(k string) { m.Get(k) })
 }
 
-func BenchmarkSyncMapSetSmallDataNoTTL(b *testing.B) {
+func BenchmarkSyncMapSmallDataNoTTL(b *testing.B) {
 	var m sync.Map
 	benchmark(b, smallData, NoTTL,
 		func(k, v string, t time.Duration) { m.Store(k, v) },
 		func(k string) { m.Load(k) })
 }
 
-func BenchmarkSyncMapSetBigDataNoTTL(b *testing.B) {
+func BenchmarkSyncMapBigDataNoTTL(b *testing.B) {
 	var m sync.Map
 	benchmark(b, bigData, NoTTL,
 		func(k, v string, t time.Duration) { m.Store(k, v) },
 		func(k string) { m.Load(k) })
 }
 
-func BenchmarkGacheSetSmallDataNoTTL(b *testing.B) {
+func BenchmarkGacheSmallDataNoTTL(b *testing.B) {
 	g := New(
 		WithMaxKeyLength[string](0),
 		WithDefaultExpiration[string](NoTTL),
@@ -186,7 +186,7 @@ func BenchmarkGacheSetSmallDataNoTTL(b *testing.B) {
 		func(k string) { g.Get(k) })
 }
 
-func BenchmarkGacheSetSmallDataWithTTL(b *testing.B) {
+func BenchmarkGacheSmallDataWithTTL(b *testing.B) {
 	g := New(
 		WithMaxKeyLength[string](0),
 		WithDefaultExpiration[string](ttl),
@@ -196,7 +196,7 @@ func BenchmarkGacheSetSmallDataWithTTL(b *testing.B) {
 		func(k string) { g.Get(k) })
 }
 
-func BenchmarkGacheSetBigDataNoTTL(b *testing.B) {
+func BenchmarkGacheBigDataNoTTL(b *testing.B) {
 	g := New(
 		WithMaxKeyLength[string](0),
 		WithDefaultExpiration[string](NoTTL),
@@ -206,7 +206,7 @@ func BenchmarkGacheSetBigDataNoTTL(b *testing.B) {
 		func(k string) { g.Get(k) })
 }
 
-func BenchmarkGacheSetBigDataWithTTL(b *testing.B) {
+func BenchmarkGacheBigDataWithTTL(b *testing.B) {
 	g := New(
 		WithMaxKeyLength[string](0),
 		WithDefaultExpiration[string](ttl),
