@@ -14,6 +14,7 @@ import (
 
 	"github.com/kpango/fastime"
 	"github.com/zeebo/xxh3"
+	"golang.org/x/sync/errgroup"
 )
 
 type (
@@ -178,18 +179,25 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 		ctx, cancel = context.WithCancel(ctx)
 		g.cancel.Store(&cancel)
 		tick := time.NewTicker(dur)
+		eg, egctx := errgroup.WithContext(ctx)
+		eg.SetLimit(runtime.GOMAXPROCS(0) * 2)
 		for {
 			select {
-			case <-ctx.Done():
+			case <-egctx.Done():
 				tick.Stop()
+				eg.Wait()
 				return
 			case ex := <-g.expChan:
-				go g.expFunc(ctx, ex.key, ex.value)
+				eg.Go(func() error {
+					g.expFunc(egctx, ex.key, ex.value)
+					return nil
+				})
 			case <-tick.C:
-				go func() {
-					g.DeleteExpired(ctx)
+				eg.Go(func() error {
+					g.DeleteExpired(egctx)
 					runtime.Gosched()
-				}()
+					return nil
+				})
 			}
 		}
 	}()
