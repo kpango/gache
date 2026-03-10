@@ -45,6 +45,7 @@ type (
 		GetRefreshWithDur(string, time.Duration) (V, bool)
 		GetWithIgnoredExpire(string) (V, bool)
 		Keys(context.Context) []string
+		Values(context.Context) []V
 		Pop(string) (V, bool)
 		SetIfNotExists(string, V)
 		SetWithExpireIfNotExists(string, V, time.Duration)
@@ -197,34 +198,52 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 }
 
 // ToMap returns All Cache Key-Value sync.Map
-func (g *gache[V]) ToMap(ctx context.Context) *sync.Map {
-	m := new(sync.Map)
-	g.Range(ctx, func(key string, val V, exp int64) (ok bool) {
-		m.Store(key, val)
+func (g *gache[V]) ToMap(ctx context.Context) (m *sync.Map) {
+	m = new(sync.Map)
+	_ = g.loop(ctx, func(k string, v *value[V]) bool {
+		m.Store(k, v.val)
 		return true
 	})
 	return m
 }
 
 // ToRawMap returns All Cache Key-Value map
-func (g *gache[V]) ToRawMap(ctx context.Context) map[string]V {
-	m := make(map[string]V, g.Len())
-	for i := range g.shards {
-		select {
-		case <-ctx.Done():
-			return m
-		default:
-			g.shards[i].RangePointer(func(k string, v *value[V]) bool {
-				if v.isValid() {
-					m[k] = v.val
-				} else {
-					g.expiration(k)
-				}
-				return true
-			})
-		}
-	}
+func (g *gache[V]) ToRawMap(ctx context.Context) (m map[string]V) {
+	var mu sync.Mutex
+	m = make(map[string]V, g.Len())
+	_ = g.loop(ctx, func(k string, v *value[V]) bool {
+		mu.Lock()
+		m[k] = v.val
+		mu.Unlock()
+		return true
+	})
 	return m
+}
+
+// Keys returns all keys in the Gache.
+func (g *gache[V]) Keys(ctx context.Context) (keys []string) {
+	var mu sync.Mutex
+	keys = make([]string, 0, g.Len())
+	_ = g.loop(ctx, func(k string, v *value[V]) bool {
+		mu.Lock()
+		keys = append(keys, k)
+		mu.Unlock()
+		return true
+	})
+	return keys
+}
+
+// Values returns all values in the Gache.
+func (g *gache[V]) Values(ctx context.Context) (values []V) {
+	var mu sync.Mutex
+	values = make([]V, 0, g.Len())
+	_ = g.loop(ctx, func(k string, v *value[V]) bool {
+		mu.Lock()
+		values = append(values, v.val)
+		mu.Unlock()
+		return true
+	})
+	return values
 }
 
 // get returns value & exists from key
@@ -302,60 +321,50 @@ func (g *gache[V]) expiration(key string) {
 }
 
 // DeleteExpired deletes expired value from Gache it can be cancel using context
-func (g *gache[V]) DeleteExpired(ctx context.Context) (rows uint64) {
-	workers := min(runtime.GOMAXPROCS(0), slen)
-	var idx atomic.Uint64
-	var wg sync.WaitGroup
-	for range workers {
-		wg.Go(func() {
-			var localRows uint64
-			for {
-				i := idx.Add(1) - 1
-				if i >= slen {
-					break
-				}
-				select {
-				case <-ctx.Done():
-					atomic.AddUint64(&rows, localRows)
-					return
-				default:
-					g.shards[i].RangePointer(func(k string, v *value[V]) (ok bool) {
-						if !v.isValid() {
-							g.expiration(k)
-							localRows++
-						}
-						return true
-					})
-				}
-			}
-			atomic.AddUint64(&rows, localRows)
-		})
-	}
-	wg.Wait()
-	return atomic.LoadUint64(&rows)
+func (g *gache[V]) DeleteExpired(ctx context.Context) (expired uint64) {
+	return g.loop(ctx, func(k string, v *value[V]) bool {
+		return true
+	})
 }
 
 // Range calls f sequentially for each key and value present in the Gache.
 func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gache[V] {
-	workers := min(runtime.GOMAXPROCS(0), slen)
-	var idx atomic.Uint64
-	var wg sync.WaitGroup
-	for range workers {
+	_ = g.loop(ctx, func(k string, v *value[V]) bool {
+		return f(k, v.val, v.expire)
+	})
+	return g
+}
+
+func (g *gache[V]) loop(ctx context.Context, f func(string, *value[V]) bool) (expiredRows uint64) {
+	var (
+		idx atomic.Uint64
+		wg  sync.WaitGroup
+	)
+	for range runtime.GOMAXPROCS(0) {
 		wg.Go(func() {
+			var expires uint64
 			for {
 				i := idx.Add(1) - 1
 				if i >= slen {
+					atomic.AddUint64(&expiredRows, expires)
 					return
 				}
 				select {
 				case <-ctx.Done():
+					atomic.AddUint64(&expiredRows, expires)
 					return
 				default:
 					g.shards[i].RangePointer(func(k string, v *value[V]) (ok bool) {
-						if v.isValid() {
-							return f(k, v.val, v.expire)
+						if v != nil {
+							switch {
+							case !v.isValid():
+								g.expiration(k)
+								expires++
+							case f != nil:
+								return f(k, v)
+							default:
+							}
 						}
-						g.expiration(k)
 						return true
 					})
 				}
@@ -363,7 +372,7 @@ func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gac
 		})
 	}
 	wg.Wait()
-	return g
+	return atomic.LoadUint64(&expiredRows)
 }
 
 // Len returns stored object length
@@ -510,27 +519,6 @@ func (g *gache[V]) GetWithIgnoredExpire(key string) (v V, ok bool) {
 		return v, false
 	}
 	return val.val, true
-}
-
-// Keys returns all keys in the Gache.
-func (g *gache[V]) Keys(ctx context.Context) []string {
-	keys := make([]string, 0, g.Len())
-	for i := range g.shards {
-		select {
-		case <-ctx.Done():
-			return keys
-		default:
-			g.shards[i].RangePointer(func(k string, v *value[V]) bool {
-				if v.isValid() {
-					keys = append(keys, k)
-				} else {
-					g.expiration(k)
-				}
-				return true
-			})
-		}
-	}
-	return keys
 }
 
 // Pop returns value & exists from key and deletes it.
