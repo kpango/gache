@@ -14,7 +14,6 @@ import (
 
 	"github.com/kpango/fastime"
 	"github.com/zeebo/xxh3"
-	"golang.org/x/sync/errgroup"
 )
 
 type (
@@ -305,52 +304,65 @@ func (g *gache[V]) expiration(key string) {
 // DeleteExpired deletes expired value from Gache it can be cancel using context
 func (g *gache[V]) DeleteExpired(ctx context.Context) (rows uint64) {
 	workers := min(runtime.GOMAXPROCS(0), slen)
-	eg, egctx := errgroup.WithContext(ctx)
-	eg.SetLimit(workers)
-	for _, shard := range g.shards {
-		eg.Go(func() error {
-			select {
-			case <-egctx.Done():
-				return nil
-			default:
-				shard.RangePointer(func(k string, v *value[V]) (ok bool) {
-					if !v.isValid() {
-						g.expiration(k)
-						atomic.AddUint64(&rows, 1)
-					}
-					return true
-				})
+	var idx atomic.Uint64
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() {
+			var localRows uint64
+			for {
+				i := idx.Add(1) - 1
+				if i >= slen {
+					break
+				}
+				select {
+				case <-ctx.Done():
+					atomic.AddUint64(&rows, localRows)
+					return
+				default:
+					g.shards[i].RangePointer(func(k string, v *value[V]) (ok bool) {
+						if !v.isValid() {
+							g.expiration(k)
+							localRows++
+						}
+						return true
+					})
+				}
 			}
-			return nil
+			atomic.AddUint64(&rows, localRows)
 		})
 	}
-	eg.Wait() //nolint:errcheck
+	wg.Wait()
 	return atomic.LoadUint64(&rows)
 }
 
 // Range calls f sequentially for each key and value present in the Gache.
 func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gache[V] {
 	workers := min(runtime.GOMAXPROCS(0), slen)
-	eg, egctx := errgroup.WithContext(ctx)
-	eg.SetLimit(workers)
-	for _, shard := range g.shards {
-		eg.Go(func() error {
-			select {
-			case <-egctx.Done():
-				return nil
-			default:
-				shard.RangePointer(func(k string, v *value[V]) (ok bool) {
-					if v.isValid() {
-						return f(k, v.val, v.expire)
-					}
-					g.expiration(k)
-					return true
-				})
+	var idx atomic.Uint64
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() {
+			for {
+				i := idx.Add(1) - 1
+				if i >= slen {
+					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					g.shards[i].RangePointer(func(k string, v *value[V]) (ok bool) {
+						if v.isValid() {
+							return f(k, v.val, v.expire)
+						}
+						g.expiration(k)
+						return true
+					})
+				}
 			}
-			return nil
 		})
 	}
-	eg.Wait() //nolint:errcheck
+	wg.Wait()
 	return g
 }
 
