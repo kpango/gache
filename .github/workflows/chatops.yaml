@@ -18,6 +18,7 @@ jobs:
       && (startsWith(github.event.comment.body, '/format')
         || startsWith(github.event.comment.body, '/test')
         || startsWith(github.event.comment.body, '/bench')
+        || startsWith(github.event.comment.body, '/diff')
         || startsWith(github.event.comment.body, '/profile')) }}
     steps:
       - name: Extract command
@@ -106,6 +107,29 @@ jobs:
           cat bench_output.txt >> comment.txt
           echo '```' >> comment.txt
 
+      - name: Process /diff
+        if: steps.command.outputs.command == '/diff'
+        run: |
+          # Fetch main branch so git worktree can use it as base branch
+          git fetch origin main:main
+
+          # make bench-compare uses BASE_BRANCH which defaults to main
+          make bench-compare || true
+
+          cat << 'COMMENTEOF' > comment.txt
+          ### Benchmark Comparison (vs main)
+          ```text
+          COMMENTEOF
+
+          # Ensure bench_results exist to avoid cat failing
+          if [ -d bench_results ] && ls bench_results/benchstat-main-* >/dev/null 2>&1; then
+             cat bench_results/benchstat-main-* >> comment.txt
+          else
+             echo "Failed to generate benchstat output. Check GitHub Actions logs for details." >> comment.txt
+          fi
+
+          echo '```' >> comment.txt
+
       - name: Process /profile
         if: steps.command.outputs.command == '/profile'
         run: |
@@ -147,7 +171,7 @@ jobs:
           git push origin HEAD:${{ fromJSON(steps.pr-info.outputs.result).head.ref }}
 
       - name: Post Comment
-        if: steps.command.outputs.command == '/test' || steps.command.outputs.command == '/bench' || steps.command.outputs.command == '/profile'
+        if: steps.command.outputs.command == '/test' || steps.command.outputs.command == '/bench' || steps.command.outputs.command == '/profile' || steps.command.outputs.command == '/diff'
         uses: actions/github-script@v7
         with:
           script: |
