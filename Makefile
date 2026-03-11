@@ -1,6 +1,10 @@
 BASE_BRANCH ?= main
 BENCH_TESTS ?= .
 BENCH_DIR ?= bench_results
+WORKTREE_DIR ?= .worktree
+CURRENT_BRANCH := $(shell git branch --show-current)
+SAFE_BRANCH := $(shell echo "$(CURRENT_BRANCH)" | tr '/' '-')
+SAFE_BASE := $(shell echo "$(BASE_BRANCH)" | tr '/' '-')
 
 GO_VERSION := 1.26.0
 GOPATH := $(eval GOPATH := $(shell go env GOPATH))$(GOPATH)
@@ -23,7 +27,8 @@ clean:
 	    $(ROOTDIR)/pprof \
 	    $(ROOTDIR)/bench \
 	    $(ROOTDIR)/vendor \
-	    $(ROOTDIR)/$(BENCH_DIR)
+	    $(ROOTDIR)/$(BENCH_DIR) \
+	    $(ROOTDIR)/$(WORKTREE_DIR)
 
 .PHONY: deps
 ## install Go package dependencies
@@ -106,32 +111,31 @@ format:
 	find ./ -type d -name .git -prune -o -type f -regex '.*\.go' -print | xargs $(GOPATH)/bin/goimports -w
 	go fix ./...
 
-bench-compare: deps
-	@CURRENT_BRANCH=$$(git branch --show-current); \
-	SAFE_BRANCH=$$(echo "$$CURRENT_BRANCH" | tr '/' '-'); \
-	SAFE_BASE=$$(echo "$(BASE_BRANCH)" | tr '/' '-'); \
-	if [ -z "$$CURRENT_BRANCH" ] || [ "$$CURRENT_BRANCH" = "$(BASE_BRANCH)" ]; then \
+$(BENCH_DIR) $(WORKTREE_DIR):
+	mkdir -p $@
+
+$(WORKTREE_DIR)/$(BASE_BRANCH): | $(WORKTREE_DIR)
+	git worktree add $@ $(BASE_BRANCH)
+
+sync-test-files: | $(WORKTREE_DIR)/$(BASE_BRANCH)
+	@echo "Copying changed test files to $(BASE_BRANCH)..."
+	@git diff --name-only $(BASE_BRANCH)...$(CURRENT_BRANCH) | grep -E '_test\.go$$' | while read -r file; do \
+		mkdir -p "$(WORKTREE_DIR)/$(BASE_BRANCH)/$$(dirname "$$file")"; \
+		cp "$(ROOTDIR)/$$file" "$(WORKTREE_DIR)/$(BASE_BRANCH)/$$file"; \
+	done || true
+
+bench-compare: deps $(BENCH_DIR) sync-test-files
+	@if [ -z "$(CURRENT_BRANCH)" ] || [ "$(CURRENT_BRANCH)" = "$(BASE_BRANCH)" ]; then \
 		echo "Must be on a branch other than $(BASE_BRANCH) to compare." && exit 1; \
-	fi; \
-	echo "Comparing benchmarks: $(BASE_BRANCH) vs $$CURRENT_BRANCH"; \
-	mkdir -p $(ROOTDIR)/$(BENCH_DIR); \
-	echo "Running benchmarks on $$CURRENT_BRANCH..."; \
-	go test -count=5 -timeout=30m -run=NONE -bench=$(BENCH_TESTS) -benchmem ./... | tee $(ROOTDIR)/$(BENCH_DIR)/$$SAFE_BRANCH.log; \
-	echo "Setting up workspace for $(BASE_BRANCH)..."; \
-	TEMP_DIR=$$(mktemp -d); \
-	WORKTREE_DIR="$$TEMP_DIR/worktree"; \
-	trap 'echo "Cleaning up workspace..."; git worktree remove --force $$WORKTREE_DIR 2>/dev/null || true; rm -rf $$TEMP_DIR' EXIT; \
-	git worktree add $$WORKTREE_DIR $(BASE_BRANCH); \
-	echo "Copying changed test files to $(BASE_BRANCH)..."; \
-	git diff --name-only $(BASE_BRANCH)...$$CURRENT_BRANCH | grep -E '_test\.go$$' | while read -r file; do \
-		mkdir -p "$$WORKTREE_DIR/$$(dirname "$$file")"; \
-		cp "$(ROOTDIR)/$$file" "$$WORKTREE_DIR/$$file"; \
-	done || true; \
-	echo "Running benchmarks on $(BASE_BRANCH)..."; \
-	(cd $$WORKTREE_DIR && go test -count=5 -timeout=30m -run=NONE -bench=$(BENCH_TESTS) -benchmem ./... | tee $(ROOTDIR)/$(BENCH_DIR)/$$SAFE_BASE.log); \
-	echo "Comparing results..."; \
-	if ! command -v benchstat > /dev/null; then \
-		echo "Installing benchstat..." && go install golang.org/x/perf/cmd/benchstat@latest; \
-	fi; \
-	$$(go env GOPATH)/bin/benchstat $(ROOTDIR)/$(BENCH_DIR)/$$SAFE_BASE.log $(ROOTDIR)/$(BENCH_DIR)/$$SAFE_BRANCH.log > $(ROOTDIR)/$(BENCH_DIR)/benchstat-$$SAFE_BASE-$$SAFE_BRANCH; \
-	cat $(ROOTDIR)/$(BENCH_DIR)/benchstat-$$SAFE_BASE-$$SAFE_BRANCH
+	fi
+	@echo "Comparing benchmarks: $(BASE_BRANCH) vs $(CURRENT_BRANCH)"
+	@echo "Running benchmarks on $(CURRENT_BRANCH)..."
+	go test -count=5 -timeout=30m -run=NONE -bench=$(BENCH_TESTS) -benchmem ./... | tee $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BRANCH).log
+	@echo "Running benchmarks on $(BASE_BRANCH)..."
+	go test -C $(WORKTREE_DIR)/$(BASE_BRANCH) -count=5 -timeout=30m -run=NONE -bench=$(BENCH_TESTS) -benchmem ./... | tee $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BASE).log
+	@echo "Comparing results..."
+	@command -v benchstat > /dev/null || (echo "Installing benchstat..." && go install golang.org/x/perf/cmd/benchstat@latest)
+	$$(go env GOPATH)/bin/benchstat $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BASE).log $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BRANCH).log > $(ROOTDIR)/$(BENCH_DIR)/benchstat-$(SAFE_BASE)-$(SAFE_BRANCH)
+	@cat $(ROOTDIR)/$(BENCH_DIR)/benchstat-$(SAFE_BASE)-$(SAFE_BRANCH)
+	@echo "Cleaning up workspace..."
+	@git worktree remove --force $(WORKTREE_DIR)/$(BASE_BRANCH) 2>/dev/null || true
