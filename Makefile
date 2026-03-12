@@ -121,6 +121,7 @@ $(BENCH_DIR) $(WORKTREE_DIR):
 	mkdir -p $@
 
 $(WORKTREE_DIR)/$(BASE_BRANCH): | $(WORKTREE_DIR)
+	git worktree remove -f $@ 2>/dev/null || true
 	git worktree add $@ $(BASE_BRANCH)
 
 sync-test-files: | $(WORKTREE_DIR)/$(BASE_BRANCH)
@@ -132,15 +133,15 @@ sync-test-files: | $(WORKTREE_DIR)/$(BASE_BRANCH)
 
 bench-compare: deps $(BENCH_DIR) sync-test-files
 	@trap 'echo "Cleaning up workspace..."; git worktree remove --force $(WORKTREE_DIR)/$(BASE_BRANCH) 2>/dev/null || true' EXIT; \
-	@if [ -z "$(CURRENT_BRANCH)" ] || [ "$(CURRENT_BRANCH)" = "$(BASE_BRANCH)" ]; then \
+	if [ -z "$(CURRENT_BRANCH)" ] || [ "$(CURRENT_BRANCH)" = "$(BASE_BRANCH)" ]; then \
 		echo "Must be on a branch other than $(BASE_BRANCH) to compare." && exit 1; \
 	fi; \
-	@echo "Comparing benchmarks: $(BASE_BRANCH) vs $(CURRENT_BRANCH)"; \
-	@echo "Running benchmarks on $(CURRENT_BRANCH)..."; \
+	echo "Comparing benchmarks: $(BASE_BRANCH) vs $(CURRENT_BRANCH)"; \
+	echo "Running benchmarks on $(CURRENT_BRANCH)..."; \
 	go test -count=5 -timeout=30m -run=NONE -bench=$(BENCH_TESTS) -benchmem ./... | tee $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BRANCH).log; \
-	@echo "Running benchmarks on $(BASE_BRANCH)..."; \
+	echo "Running benchmarks on $(BASE_BRANCH)..."; \
 	go test -C $(WORKTREE_DIR)/$(BASE_BRANCH) -count=5 -timeout=30m -run=NONE -bench=$(BENCH_TESTS) -benchmem ./... | tee $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BASE).log; \
-	@echo "Comparing results..."; \
-	@command -v benchstat > /dev/null || (echo "Installing benchstat..." && go install golang.org/x/perf/cmd/benchstat@latest); \
+	echo "Comparing results..."; \
+	command -v benchstat > /dev/null || (echo "Installing benchstat..." && go install golang.org/x/perf/cmd/benchstat@latest); \
 	$$(go env GOPATH)/bin/benchstat $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BASE).log $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BRANCH).log > $(ROOTDIR)/$(BENCH_DIR)/benchstat-$(SAFE_BASE)-$(SAFE_BRANCH); \
-	@cat $(ROOTDIR)/$(BENCH_DIR)/benchstat-$(SAFE_BASE)-$(SAFE_BRANCH)
+	cat $(ROOTDIR)/$(BENCH_DIR)/benchstat-$(SAFE_BASE)-$(SAFE_BRANCH)
