@@ -209,40 +209,70 @@ func (g *gache[V]) ToMap(ctx context.Context) (m *sync.Map) {
 
 // ToRawMap returns All Cache Key-Value map
 func (g *gache[V]) ToRawMap(ctx context.Context) (m map[string]V) {
-	var mu sync.Mutex
 	m = make(map[string]V, g.Len())
-	_ = g.loop(ctx, func(k string, v *value[V]) bool {
-		mu.Lock()
-		m[k] = v.val
-		mu.Unlock()
-		return true
-	})
+	for i := range g.shards {
+		select {
+		case <-ctx.Done():
+			return m
+		default:
+			g.shards[i].RangePointer(func(k string, v *value[V]) bool {
+				if v != nil {
+					if !v.isValid() {
+						g.expiration(k)
+					} else {
+						m[k] = v.val
+					}
+				}
+				return true
+			})
+		}
+	}
 	return m
 }
 
 // Keys returns all keys in the Gache.
 func (g *gache[V]) Keys(ctx context.Context) (keys []string) {
-	var mu sync.Mutex
 	keys = make([]string, 0, g.Len())
-	_ = g.loop(ctx, func(k string, v *value[V]) bool {
-		mu.Lock()
-		keys = append(keys, k)
-		mu.Unlock()
-		return true
-	})
+	for i := range g.shards {
+		select {
+		case <-ctx.Done():
+			return keys
+		default:
+			g.shards[i].RangePointer(func(k string, v *value[V]) bool {
+				if v != nil {
+					if !v.isValid() {
+						g.expiration(k)
+					} else {
+						keys = append(keys, k)
+					}
+				}
+				return true
+			})
+		}
+	}
 	return keys
 }
 
 // Values returns all values in the Gache.
 func (g *gache[V]) Values(ctx context.Context) (values []V) {
-	var mu sync.Mutex
 	values = make([]V, 0, g.Len())
-	_ = g.loop(ctx, func(k string, v *value[V]) bool {
-		mu.Lock()
-		values = append(values, v.val)
-		mu.Unlock()
-		return true
-	})
+	for i := range g.shards {
+		select {
+		case <-ctx.Done():
+			return values
+		default:
+			g.shards[i].RangePointer(func(k string, v *value[V]) bool {
+				if v != nil {
+					if !v.isValid() {
+						g.expiration(k)
+					} else {
+						values = append(values, v.val)
+					}
+				}
+				return true
+			})
+		}
+	}
 	return values
 }
 
