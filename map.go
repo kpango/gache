@@ -549,8 +549,8 @@ func (m *Map[K, V]) Size() (size uintptr) {
 		size += ro.Size()
 	}
 	size += mapSize(m.dirty)
-	for _, e := range m.dirty {
-		size += e.Size()
+	if l := len(m.dirty); l > 0 {
+		size += uintptr(l) * (unsafe.Sizeof(entry[V]{}) + unsafe.Sizeof(*new(V)))
 	}
 	return size
 }
@@ -570,8 +570,8 @@ func (e *entry[V]) Size() (size uintptr) {
 func (r readOnly[K, V]) Size() (size uintptr) {
 	size = unsafe.Sizeof(r.amended)
 	size += mapSize(r.m)
-	for _, e := range r.m {
-		size += e.Size()
+	if l := len(r.m); l > 0 {
+		size += uintptr(l) * (unsafe.Sizeof(entry[V]{}) + unsafe.Sizeof(*new(V)))
 	}
 	return size
 }
