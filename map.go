@@ -49,22 +49,27 @@ type readOnly[K comparable, V any] struct {
 	amended bool
 }
 
-var expunged = unsafe.Pointer(new(any))
-
 type entry[V any] struct {
-	p atomic.Pointer[V]
+	expunged atomic.Pointer[V]
+	p        atomic.Pointer[V]
 }
 
 func newEntry[V any](v V) (e *entry[V]) {
 	e = &entry[V]{}
+	e.expunged.Store(new(V))
 	e.p.Store(&v)
 	return e
 }
 
 func newEntryPointer[V any](v *V) (e *entry[V]) {
 	e = &entry[V]{}
+	e.expunged.Store(new(V))
 	e.p.Store(v)
 	return e
+}
+
+func (e *entry[V]) isExpunged(p *V) bool {
+	return p == e.expunged.Load()
 }
 
 func (m *Map[K, V]) loadReadOnly() (ro readOnly[K, V]) {
@@ -128,7 +133,7 @@ func (m *Map[K, V]) Load(key K) (value V, ok bool) {
 
 func (e *entry[V]) load() (value V, ok bool) {
 	p := e.p.Load()
-	if p == nil || p == (*V)(expunged) {
+	if p == nil || e.isExpunged(p) {
 		return value, false
 	}
 	return *p, true
@@ -136,7 +141,7 @@ func (e *entry[V]) load() (value V, ok bool) {
 
 func (e *entry[V]) loadPointer() (value *V, ok bool) {
 	p := e.p.Load()
-	if p == nil || p == (*V)(expunged) {
+	if p == nil || e.isExpunged(p) {
 		return nil, false
 	}
 	return p, true
@@ -172,7 +177,7 @@ func (m *Map[K, V]) Clear() {
 }
 
 func (e *entry[V]) unexpungeLocked() (wasExpunged bool) {
-	return e.p.CompareAndSwap((*V)(expunged), nil)
+	return e.p.CompareAndSwap(e.expunged.Load(), nil)
 }
 
 func (e *entry[V]) swapLocked(i *V) (v *V) {
@@ -292,7 +297,7 @@ func (m *Map[K, V]) loadOrStorePointerSlow(key K, value *V) (actual *V, loaded b
 
 func (e *entry[V]) tryLoadOrStorePointer(i *V) (actual *V, loaded, ok bool) {
 	p := e.p.Load()
-	if p == (*V)(expunged) {
+	if e.isExpunged(p) {
 		return nil, false, false
 	}
 	if p != nil {
@@ -304,7 +309,7 @@ func (e *entry[V]) tryLoadOrStorePointer(i *V) (actual *V, loaded, ok bool) {
 			return i, false, true
 		}
 		p = e.p.Load()
-		if p == (*V)(expunged) {
+		if e.isExpunged(p) {
 			return nil, false, false
 		}
 		if p != nil {
@@ -336,7 +341,7 @@ func (m *Map[K, V]) LoadAndDeletePointer(key K) (value *V, loaded bool) {
 func (e *entry[V]) deletePointer() (value *V, ok bool) {
 	for {
 		p := e.p.Load()
-		if p == nil || p == (*V)(expunged) {
+		if p == nil || e.isExpunged(p) {
 			return nil, false
 		}
 		if e.p.CompareAndSwap(p, nil) {
@@ -352,7 +357,7 @@ func (m *Map[K, V]) Delete(key K) {
 func (e *entry[V]) trySwap(i *V) (v *V, ok bool) {
 	for {
 		p := e.p.Load()
-		if p == (*V)(expunged) {
+		if e.isExpunged(p) {
 			return nil, false
 		}
 		if e.p.CompareAndSwap(p, i) {
@@ -409,7 +414,7 @@ func (m *Map[K, V]) CompareAndSwapPointer(key K, old, new *V) (swapped bool) {
 
 func (e *entry[V]) tryCompareAndSwap(oldp *V, new V) (ok bool) {
 	p := e.p.Load()
-	if p == nil || p == (*V)(expunged) || !reflect.DeepEqual(*p, *oldp) {
+	if p == nil || e.isExpunged(p) || !reflect.DeepEqual(*p, *oldp) {
 		return false
 	}
 
@@ -419,7 +424,7 @@ func (e *entry[V]) tryCompareAndSwap(oldp *V, new V) (ok bool) {
 			return true
 		}
 		p = e.p.Load()
-		if p == nil || p == (*V)(expunged) || !reflect.DeepEqual(*p, *oldp) {
+		if p == nil || e.isExpunged(p) || !reflect.DeepEqual(*p, *oldp) {
 			return false
 		}
 	}
@@ -427,7 +432,7 @@ func (e *entry[V]) tryCompareAndSwap(oldp *V, new V) (ok bool) {
 
 func (e *entry[V]) tryCompareAndSwapPointer(old, new *V) (ok bool) {
 	p := e.p.Load()
-	if p == (*V)(expunged) {
+	if e.isExpunged(p) {
 		return false
 	}
 	if p != old {
@@ -451,7 +456,7 @@ func (m *Map[K, V]) CompareAndDelete(key K, old V) (deleted bool) {
 	}
 	for ok {
 		p := e.p.Load()
-		if p == nil || p == (*V)(expunged) || !reflect.DeepEqual(*p, old) {
+		if p == nil || e.isExpunged(p) || !reflect.DeepEqual(*p, old) {
 			return false
 		}
 		if e.p.CompareAndSwap(p, nil) {
@@ -525,12 +530,12 @@ func (m *Map[K, V]) initDirty(size int) {
 func (e *entry[V]) tryExpungeLocked() (isExpunged bool) {
 	p := e.p.Load()
 	for p == nil {
-		if e.p.CompareAndSwap(nil, (*V)(expunged)) {
+		if e.p.CompareAndSwap(nil, e.expunged.Load()) {
 			return true
 		}
 		p = e.p.Load()
 	}
-	return p == (*V)(expunged)
+	return e.isExpunged(p)
 }
 
 func (m *Map[K, V]) Len() int {
@@ -561,7 +566,7 @@ func (e *entry[V]) Size() (size uintptr) {
 	}
 	size += unsafe.Sizeof(e.p)
 
-	if ep := e.p.Load(); ep != nil && ep != (*V)(expunged) {
+	if ep := e.p.Load(); ep != nil && !e.isExpunged(ep) {
 		size += unsafe.Sizeof(*ep)
 	}
 	return size
