@@ -30,6 +30,7 @@
 package gache
 
 import (
+	"sync/atomic"
 	"testing"
 	"unsafe"
 )
@@ -76,7 +77,7 @@ func TestGacheMapSize(t *testing.T) {
 	}
 
 	m := make(map[int]*entry[int])
-	m[1] = newEntry(1)
+	m[1] = newEntryPointer(new(1), new(atomic.Int64))
 
 	expectedSize := unsafe.Sizeof(gacheMap.mu) +
 		unsafe.Sizeof(gacheMap.read) +
