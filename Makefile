@@ -12,7 +12,7 @@ endif
 SAFE_BRANCH := $(shell echo "$(CURRENT_BRANCH)" | tr '/' '-')
 SAFE_BASE := $(shell echo "$(BASE_BRANCH)" | tr '/' '-')
 
-GO_VERSION := 1.26.0
+GO_VERSION := 1.26.1
 GOPATH := $(eval GOPATH := $(shell go env GOPATH))$(GOPATH)
 GOLINES_MAX_WIDTH     ?= 200
 
@@ -102,7 +102,7 @@ lint:
 	gometalinter --enable-all . | rg -v comment
 
 test:
-	CGO_ENABLED=1 GO111MODULE=on go test --race -v $(go list ./... | rg -v vendor)
+	CGO_ENABLED=1 GO111MODULE=on go test -race -v $(go list ./... | rg -v vendor)
 
 contributors:
 	git log --format='%aN <%aE>' | sort -fu > CONTRIBUTORS
