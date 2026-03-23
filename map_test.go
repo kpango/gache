@@ -67,8 +67,9 @@ var mapOps = [...]mapOp{
 
 // mapCall is a quick.Generator for calls on mapInterface.
 type mapCall struct {
-	op   mapOp
-	k, v any
+	k  any
+	v  any
+	op mapOp
 }
 
 func (c mapCall) apply(m mapInterface) (any, bool) {

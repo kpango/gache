@@ -17,7 +17,7 @@ type refTableHdr struct {
 	capacity   uint16
 	growthLeft uint16
 	localDepth uint8
-	_pad       uint8 // explicit padding to align index to 8 bytes
+	_pad       uint8
 	index      int
 	groups     refGroupsRef
 }
@@ -32,6 +32,7 @@ type refHmap struct {
 	globalShift       uint8
 	writing           uint8
 	tombstonePossible bool
+	_                 [4]byte
 	clearSeq          uint64
 }
 
@@ -48,8 +49,8 @@ func groupSizeFor[K comparable, V any]() uintptr {
 		elem V
 	}
 	type group struct {
-		ctrl  uint64
 		slots [8]slot
+		ctrl  uint64
 	}
 	return unsafe.Sizeof(group{})
 }
@@ -140,7 +141,7 @@ func requireDirLen(t *testing.T, h *hmap, minDir int) {
 }
 
 // TestSwissInternals_SanityChecks provides a third validation layer that is
-// independent of both mapSize and expectedSizeFromSwissInternals:
+// independent of both mapSize and expectedSizeFromSwissInternals:.
 func TestSwissInternals_SanityChecks(t *testing.T) {
 	t.Parallel()
 

@@ -38,10 +38,10 @@ import (
 
 type Map[K comparable, V any] struct {
 	read   atomic.Pointer[readOnly[K, V]]
-	mu     sync.RWMutex
 	dirty  map[K]*entry[V]
+	l      atomic.Pointer[atomic.Int64]
 	misses int
-	l      atomic.Pointer[atomic.Int64] // shard counter
+	mu     sync.RWMutex
 }
 
 type readOnly[K comparable, V any] struct {
