@@ -1,0 +1,118 @@
+{
+  "formatters": {
+    "enable": ["gofumpt", "goimports", "golines"],
+    "settings": {
+      "golines": {
+        "max-len": 200
+      }
+    },
+    "exclusions": {
+      "generated": "lax",
+      "paths": ["third_party$", "builtin$", "examples$"]
+    }
+  },
+  "linters": {
+    "default": "none",
+    "enable": [
+      "asasalint",
+      "asciicheck",
+      "bidichk",
+      "bodyclose",
+      "containedctx",
+      "contextcheck",
+      "decorder",
+      "depguard",
+      "dogsled",
+      "dupl",
+      "dupword",
+      "durationcheck",
+      "errchkjson",
+      "errname",
+      "errorlint",
+      "exhaustive",
+      "forcetypeassert",
+      "ginkgolinter",
+      "gocheckcompilerdirectives",
+      "gochecknoglobals",
+      "gochecknoinits",
+      "goconst",
+      "godot",
+      "gosec",
+      "gosmopolitan",
+      "govet",
+      "grouper",
+      "ineffassign",
+      "interfacebloat",
+      "loggercheck",
+      "maintidx",
+      "makezero",
+      "mirror",
+      "misspell",
+      "mnd",
+      "musttag",
+      "nakedret",
+      "nilerr",
+      "nilnil",
+      "noctx",
+      "nosprintfhostport",
+      "prealloc",
+      "predeclared",
+      "reassign",
+      "rowserrcheck",
+      "sqlclosecheck",
+      "staticcheck",
+      "tagalign",
+      "tagliatelle",
+      "testableexamples",
+      "thelper",
+      "unconvert",
+      "unparam",
+      "unused",
+      "usestdlibvars"
+    ],
+    "exclusions": {
+      "generated": "lax",
+      "paths": ["third_party$", "builtin$", "examples$"],
+      "rules": [
+        {
+          "linters": [
+            "dupl",
+            "forcetypeassert",
+            "gochecknoinits",
+            "mnd",
+            "noctx"
+          ],
+          "path": "_test\\.go"
+        },
+        {
+          "linters": ["govet"],
+          "path": "_test\\.go",
+          "text": "copylocks:"
+        },
+        {
+          "linters": ["gochecknoglobals", "mnd"],
+          "path": "options?\\.go"
+        },
+        {
+          "linters": ["gochecknoglobals"],
+          "path": "main\\.go"
+        }
+      ]
+    },
+    "settings": {
+      "govet": {
+        "enable-all": true
+      },
+      "tagliatelle": {
+        "case": {
+          "rules": {
+            "json": "snake",
+            "yaml": "snake"
+          },
+          "use-field-name": true
+        }
+      }
+    }
+  },
+  "version": "2"
+}

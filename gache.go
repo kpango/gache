@@ -18,7 +18,7 @@ import (
 )
 
 type (
-	// Gache is base interface type
+	// Gache is base interface type.
 	Gache[V any] interface {
 		Clear()
 		Delete(string) (V, bool)
@@ -52,7 +52,7 @@ type (
 		SetWithExpireIfNotExists(string, V, time.Duration)
 	}
 
-	// gache is base instance type
+	// gache is base instance type.
 	gache[V any] struct {
 		shards         [slen]*Map[string, value[V]]
 		cancel         atomic.Pointer[context.CancelFunc]
@@ -70,20 +70,20 @@ type (
 	}
 
 	kv[V any] struct {
-		key   string
 		value V
+		key   string
 	}
 )
 
 const (
-	// slen is shards length
+	// slen is shards length.
 	slen = 4096
 	// slen = 512
-	// mask is slen-1 Hex value
+	// mask is slen-1 Hex value.
 	mask = 0xFFF
-	// mask = 0x1FF
+	// mask = 0x1FF.
 
-	// NoTTL can be use for disabling ttl cache expiration
+	// NoTTL can be use for disabling ttl cache expiration.
 	NoTTL time.Duration = -1
 )
 
@@ -93,7 +93,7 @@ const (
 // stronger isolation against collision attacks, do not assume per-instance seeding.
 var hashSeed = maphash.MakeSeed()
 
-// New returns Gache (*gache) instance
+// New returns Gache (*gache) instance.
 func New[V any](opts ...Option[V]) Gache[V] {
 	g := new(gache[V])
 	g.valPool = &sync.Pool{
@@ -136,7 +136,7 @@ func getShardID(key string, kl uint64) (id uint64) {
 	return xxh3.HashString(key) & mask
 }
 
-// isValid checks expiration of value
+// isValid checks expiration of value.
 func (v *value[V]) isValid() (valid bool) {
 	return v.expire <= 0 || fastime.UnixNanoNow() <= v.expire
 }
@@ -149,31 +149,31 @@ func (v *value[V]) reset() {
 	v.expire = 0
 }
 
-// SetDefaultExpire set expire duration
+// SetDefaultExpire set expire duration.
 func (g *gache[V]) SetDefaultExpire(ex time.Duration) Gache[V] {
 	atomic.StoreInt64(&g.expire, *(*int64)(unsafe.Pointer(&ex)))
 	return g
 }
 
-// EnableExpiredHook enables expired hook function
+// EnableExpiredHook enables expired hook function.
 func (g *gache[V]) EnableExpiredHook() Gache[V] {
 	g.expFuncEnabled = true
 	return g
 }
 
-// DisableExpiredHook disables expired hook function
+// DisableExpiredHook disables expired hook function.
 func (g *gache[V]) DisableExpiredHook() Gache[V] {
 	g.expFuncEnabled = false
 	return g
 }
 
-// SetExpiredHook set expire hooked function
+// SetExpiredHook set expire hooked function.
 func (g *gache[V]) SetExpiredHook(f func(context.Context, string, V)) Gache[V] {
 	g.expFunc = f
 	return g
 }
 
-// StartExpired starts delete expired value daemon
+// StartExpired starts delete expired value daemon.
 func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V] {
 	go func() {
 		var cancel context.CancelFunc
@@ -205,7 +205,7 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 	return g
 }
 
-// ToMap returns All Cache Key-Value sync.Map
+// ToMap returns All Cache Key-Value sync.Map.
 func (g *gache[V]) ToMap(ctx context.Context) (m *sync.Map) {
 	m = new(sync.Map)
 	_ = g.loop(ctx, func(k string, v *value[V]) bool {
@@ -215,7 +215,7 @@ func (g *gache[V]) ToMap(ctx context.Context) (m *sync.Map) {
 	return m
 }
 
-// ToRawMap returns All Cache Key-Value map
+// ToRawMap returns All Cache Key-Value map.
 func (g *gache[V]) ToRawMap(ctx context.Context) (m map[string]V) {
 	var mu sync.Mutex
 	m = make(map[string]V, g.Len())
@@ -254,7 +254,7 @@ func (g *gache[V]) Values(ctx context.Context) (values []V) {
 	return values
 }
 
-// get returns value & exists from key
+// get returns value & exists from key.
 func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
 	var val *value[V]
 	val, ok = g.shards[getShardID(key, g.maxKeyLength)].LoadPointer(key)
@@ -270,18 +270,18 @@ func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
 	return v, val.expire, false
 }
 
-// Get returns value & exists from key
+// Get returns value & exists from key.
 func (g *gache[V]) Get(key string) (v V, ok bool) {
 	v, _, ok = g.get(key)
 	return v, ok
 }
 
-// GetWithExpire returns value & expire & exists from key
+// GetWithExpire returns value & expire & exists from key.
 func (g *gache[V]) GetWithExpire(key string) (v V, expire int64, ok bool) {
 	return g.get(key)
 }
 
-// set sets key-value & expiration to Gache
+// set sets key-value & expiration to Gache.
 func (g *gache[V]) set(key string, val V, expire int64) {
 	if expire > 0 {
 		expire = fastime.UnixNanoNow() + expire
@@ -297,17 +297,17 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	}
 }
 
-// SetWithExpire sets key-value & expiration to Gache
+// SetWithExpire sets key-value & expiration to Gache.
 func (g *gache[V]) SetWithExpire(key string, val V, expire time.Duration) {
 	g.set(key, val, *(*int64)(unsafe.Pointer(&expire)))
 }
 
-// Set sets key-value to Gache using default expiration
+// Set sets key-value to Gache using default expiration.
 func (g *gache[V]) Set(key string, val V) {
 	g.set(key, val, atomic.LoadInt64(&g.expire))
 }
 
-// Delete deletes value from Gache using key
+// Delete deletes value from Gache using key.
 func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 	var val *value[V]
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
@@ -328,7 +328,7 @@ func (g *gache[V]) expiration(key string) {
 	}
 }
 
-// DeleteExpired deletes expired value from Gache it can be cancel using context
+// DeleteExpired deletes expired value from Gache it can be cancel using context.
 func (g *gache[V]) DeleteExpired(ctx context.Context) (expired uint64) {
 	return g.loop(ctx, func(k string, v *value[V]) bool {
 		return true
@@ -344,46 +344,69 @@ func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gac
 }
 
 func (g *gache[V]) loop(ctx context.Context, f func(string, *value[V]) bool) (expiredRows uint64) {
-	var (
-		idx atomic.Uint64
-		wg  sync.WaitGroup
-	)
-	for range runtime.GOMAXPROCS(0) {
-		wg.Go(func() {
-			var expires uint64
-			for {
-				i := idx.Add(1) - 1
-				if i >= slen {
-					atomic.AddUint64(&expiredRows, expires)
-					return
-				}
-				select {
-				case <-ctx.Done():
-					atomic.AddUint64(&expiredRows, expires)
-					return
-				default:
-					g.shards[i].RangePointer(func(k string, v *value[V]) (ok bool) {
-						if v != nil {
-							switch {
-							case !v.isValid():
-								g.expiration(k)
-								expires++
-							case f != nil:
-								return f(k, v)
-							default:
-							}
-						}
-						return true
-					})
+	nprocs := min(min(runtime.GOMAXPROCS(0), 32), slen)
+	var fn func(k string, v *value[V]) bool
+	if f != nil {
+		fn = func(k string, v *value[V]) bool {
+			if v != nil {
+				if !v.isValid() {
+					g.expiration(k)
+					atomic.AddUint64(&expiredRows, 1)
+				} else {
+					return f(k, v)
 				}
 			}
-		})
+			return true
+		}
+	} else {
+		fn = func(k string, v *value[V]) bool {
+			if v != nil && !v.isValid() {
+				g.expiration(k)
+				atomic.AddUint64(&expiredRows, 1)
+			}
+			return true
+		}
 	}
+
+	if nprocs <= 1 {
+		for i := range slen {
+			if ctx.Err() != nil {
+				break
+			}
+			g.shards[i].RangePointer(fn)
+		}
+		return atomic.LoadUint64(&expiredRows)
+	}
+
+	var idx atomic.Uint64
+	var wg sync.WaitGroup
+	worker := func() {
+		for {
+			endIdx := idx.Add(16)
+			startIdx := endIdx - 16
+			if startIdx >= slen || ctx.Err() != nil {
+				wg.Done()
+				return
+			}
+			if endIdx > slen {
+				endIdx = slen
+			}
+			for j := startIdx; j < endIdx; j++ {
+				g.shards[j].RangePointer(fn)
+			}
+		}
+	}
+
+	wg.Add(nprocs)
+	for i := 0; i < nprocs-1; i++ {
+		go worker()
+	}
+	worker()
 	wg.Wait()
 	return atomic.LoadUint64(&expiredRows)
 }
 
-// Len returns stored object length
+// Len returns stored object length.
 func (g *gache[V]) Len() (l int) {
 	for i := range g.shards {
 		l += g.shards[i].Len()
@@ -403,14 +426,14 @@ func (g *gache[V]) Size() (size uintptr) {
 	return size
 }
 
-// Write writes all cached data to writer
+// Write writes all cached data to writer.
 func (g *gache[V]) Write(ctx context.Context, w io.Writer) error {
 	m := g.ToRawMap(ctx)
 	gob.Register(map[string]V{})
 	return gob.NewEncoder(w).Encode(&m)
 }
 
-// Read reads reader data to cache
+// Read reads reader data to cache.
 func (g *gache[V]) Read(r io.Reader) error {
 	var m map[string]V
 	gob.Register(map[string]V{})
@@ -424,7 +447,7 @@ func (g *gache[V]) Read(r io.Reader) error {
 	return nil
 }
 
-// Stop kills expire daemon
+// Stop kills expire daemon.
 func (g *gache[V]) Stop() {
 	if c := g.cancel.Load(); c != nil {
 		cancel := *c

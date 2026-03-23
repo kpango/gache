@@ -17,8 +17,8 @@ import (
 )
 
 type DefaultMap struct {
-	mu   sync.RWMutex
 	data map[any]any
+	mu   sync.RWMutex
 }
 
 func NewDefault() *DefaultMap {
@@ -128,9 +128,11 @@ func benchmark(b *testing.B, data []keyValue,
 	get func(string),
 ) {
 	b.Helper()
+	nprocs := runtime.GOMAXPROCS(0)
 	for _, p := range parallelismValues {
 		b.Run(fmt.Sprintf("P%d", p), func(b *testing.B) {
-			b.SetParallelism(p)
+			mp := max(p/nprocs, 1)
+			b.SetParallelism(mp)
 			b.ReportAllocs()
 			runtime.GC()
 			b.ResetTimer()
@@ -458,10 +460,10 @@ func PrintRate() {
 
 type dummyData struct {
 	Name    string
-	Age     int32
-	Gender  int32
 	Company string
 	Skills  []string
+	Age     int32
+	Gender  int32
 }
 
 // BenchmarkDeleteExpired measures the throughput of the periodic cleanup sweep.
@@ -501,5 +503,62 @@ func BenchmarkRange(b *testing.B) {
 	b.ReportAllocs()
 	for range b.N {
 		g.Range(ctx, func(_ string, _ string, _ int64) bool { return true })
+	}
+}
+
+func BenchmarkKeys(b *testing.B) {
+	ctx := context.Background()
+	g := New[int]()
+	for i := range 100000 {
+		g.Set(strconv.Itoa(i), i)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = g.Keys(ctx)
+	}
+}
+
+func BenchmarkValues(b *testing.B) {
+	ctx := context.Background()
+	g := New[int]()
+	for i := range 100000 {
+		g.Set(strconv.Itoa(i), i)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = g.Values(ctx)
+	}
+}
+
+func BenchmarkToRawMap(b *testing.B) {
+	ctx := context.Background()
+	g := New[int]()
+	for i := range 100000 {
+		g.Set(strconv.Itoa(i), i)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = g.ToRawMap(ctx)
+	}
+}
+
+func BenchmarkLoop(b *testing.B) {
+	sizes := []int{10_000, 100_000, 1_000_000}
+	for _, size := range sizes {
+		b.Run(fmt.Sprintf("%d", size), func(b *testing.B) {
+			ctx := context.Background()
+			g := New[string]().(*gache[string])
+			for i := range size {
+				g.Set(fmt.Sprintf("key-%d", i), "value")
+			}
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				g.loop(ctx, func(k string, v *value[string]) bool {
+					return true
+				})
+			}
+		})
 	}
 }

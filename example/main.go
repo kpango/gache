@@ -94,7 +94,7 @@ func main() {
 	runtime.ReadMemStats(&m)
 	mbody, err := json.Marshal(m)
 	if err == nil {
-		glg.Debugf("memory size: %d, lenght: %d, mem stats: %v", gc.Size(), gc.Len(), string(mbody))
+		glg.Debugf("memory size: %d, length: %d, mem stats: %v", gc.Size(), gc.Len(), string(mbody))
 	}
 	path := "/tmp/gache-sample.gdb"
 
@@ -167,8 +167,8 @@ func main() {
 			// runtime.ReadMemStats(&m)
 			// mbody, err := json.Marshal(m)
 			if err == nil {
-				// glg.Debugf("before set memory size: %d, lenght: %d, mem stats: %v", gcs.Size(), gcs.Len(), string(mbody))
-				glg.Debugf("Execution No.%-*d:\tbefore set memory size: %d, lenght: %d", digitLen, i, gcs.Size(), gcs.Len())
+				// glg.Debugf("before set memory size: %d, length: %d, mem stats: %v", gcs.Size(), gcs.Len(), string(mbody))
+				glg.Debugf("Execution No.%-*d:\tbefore set memory size: %d, length: %d", digitLen, i, gcs.Size(), gcs.Len())
 			}
 		}
 		for k, v := range bigData {
@@ -178,8 +178,8 @@ func main() {
 			// runtime.ReadMemStats(&m)
 			// mbody, err := json.Marshal(m)
 			if err == nil {
-				glg.Debugf("Execution No.%-*d:\tafter set memory size: %d, lenght: %d", digitLen, i, gcs.Size(), gcs.Len())
-				// glg.Debugf("after set memory size: %d, lenght: %d, mem stats: %v", gcs.Size(), gcs.Len(), string(mbody))
+				glg.Debugf("Execution No.%-*d:\tafter set memory size: %d, length: %d", digitLen, i, gcs.Size(), gcs.Len())
+				// glg.Debugf("after set memory size: %d, length: %d, mem stats: %v", gcs.Size(), gcs.Len(), string(mbody))
 			}
 		}
 
@@ -193,15 +193,15 @@ func main() {
 			// runtime.ReadMemStats(&m)
 			// mbody, err := json.Marshal(m)
 			if err == nil {
-				glg.Debugf("Execution No.%-*d:\tafter delete memory size: %d, lenght: %d", digitLen, i, gcs.Size(), gcs.Len())
-				// glg.Debugf("after delete memory size: %d, lenght: %d, mem stats: %v", gcs.Size(), gcs.Len(), string(mbody))
+				glg.Debugf("Execution No.%-*d:\tafter delete memory size: %d, length: %d", digitLen, i, gcs.Size(), gcs.Len())
+				// glg.Debugf("after delete memory size: %d, length: %d, mem stats: %v", gcs.Size(), gcs.Len(), string(mbody))
 			}
 			runtime.GC()
 			// runtime.ReadMemStats(&m)
 			// mbody, err = json.Marshal(m)
 			if err == nil {
-				glg.Debugf("Execution No.%-*d:\tafter gc memory size: %d, lenght: %d", digitLen, i, gcs.Size(), gcs.Len())
-				// glg.Debugf("after gc memory size: %d, lenght: %d, mem stats: %v", gcs.Size(), gcs.Len(), string(mbody))
+				glg.Debugf("Execution No.%-*d:\tafter gc memory size: %d, length: %d", digitLen, i, gcs.Size(), gcs.Len())
+				// glg.Debugf("after gc memory size: %d, length: %d, mem stats: %v", gcs.Size(), gcs.Len(), string(mbody))
 			}
 		}
 

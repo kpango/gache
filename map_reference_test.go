@@ -53,8 +53,8 @@ var (
 
 // RWMutexMap is an implementation of mapInterface using a sync.RWMutex.
 type RWMutexMap struct {
-	mu    sync.RWMutex
 	dirty map[any]any
+	mu    sync.RWMutex
 }
 
 func (m *RWMutexMap) Load(key any) (value any, ok bool) {
@@ -170,8 +170,8 @@ func (m *RWMutexMap) Range(f func(key, value any) (shouldContinue bool)) {
 // atomic.Value.  It makes deep copies of the map on every write to avoid
 // acquiring the Mutex in Load.
 type DeepCopyMap struct {
-	mu    sync.Mutex
 	clean atomic.Value
+	mu    sync.Mutex
 }
 
 func (m *DeepCopyMap) Load(key any) (value any, ok bool) {

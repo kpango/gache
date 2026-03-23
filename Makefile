@@ -98,9 +98,6 @@ profile-web-mem:
 		pprof/gache-test.bin \
 		pprof/mem-gache.out
 
-lint:
-	gometalinter --enable-all . | rg -v comment
-
 test:
 	CGO_ENABLED=1 GO111MODULE=on go test -race -v $(go list ./... | rg -v vendor)
 
@@ -116,6 +113,9 @@ format:
 	find ./ -type d -name .git -prune -o -type f -regex '.*[^\.pb]\.go' -print | xargs $(GOPATH)/bin/strictgoimports -w
 	find ./ -type d -name .git -prune -o -type f -regex '.*\.go' -print | xargs $(GOPATH)/bin/goimports -w
 	go fix ./...
+
+lint:
+	golangci-lint run --config $(ROOTDIR)/.golangci.json --fix
 
 $(BENCH_DIR) $(WORKTREE_DIR):
 	mkdir -p $@

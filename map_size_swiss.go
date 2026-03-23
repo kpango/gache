@@ -55,6 +55,7 @@ type hmap struct {
 	globalShift       uint8
 	writing           uint8
 	tombstonePossible bool
+	_                 [4]byte
 	clearSeq          uint64
 }
 
@@ -75,7 +76,7 @@ type tableHdr struct {
 	capacity   uint16
 	growthLeft uint16
 	localDepth uint8
-	_pad       uint8 // padding to align index to 8
+	_pad       uint8
 	index      int
 	groups     groupsRef
 }
@@ -118,8 +119,8 @@ func mapSize[K comparable, V any](m map[K]V) uintptr {
 		elem V
 	}
 	type group struct {
-		ctrl  uint64
 		slots [8]slot
+		ctrl  uint64
 	}
 
 	groupSize := unsafe.Sizeof(group{})
