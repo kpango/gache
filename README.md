@@ -12,119 +12,264 @@
 [![Join the chat at https://gitter.im/kpango/gache](https://badges.gitter.im/kpango/gache.svg)](https://gitter.im/kpango/gache?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 [![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Fkpango%2Fgache.svg?type=shield)](https://app.fossa.io/projects/git%2Bgithub.com%2Fkpango%2Fgache?ref=badge_shield)
 
-gache is thinnest cache library for go application
+gache is the thinnest cache library for Go applications.
+
+It provides a **generic, type-safe, concurrent-safe in-memory cache** with TTL (time-to-live) support. gache uses a sharded architecture (4096 shards) to minimize lock contention, making it ideal for high-throughput, concurrent workloads. It outperforms `sync.Map`, [go-cache](https://github.com/patrickmn/go-cache), [bigcache](https://github.com/allegro/bigcache), [gcache](https://github.com/bluele/gcache), and [ttlcache](https://github.com/jellydator/ttlcache) in benchmarks while providing a richer feature set.
+
+## Features
+
+- **Go Generics** – Full type safety via `Gache[V any]`; no type assertions required.
+- **High Performance** – Sharded storage with 4096 shards and lock-free reads minimize contention.
+- **TTL / Expiration** – Per-key and default TTL support. Use `gache.NoTTL` for entries that should never expire.
+- **Background Expiration** – Optional daemon (`StartExpired`) periodically removes expired entries.
+- **Expiration Hooks** – Register a callback that fires when entries expire.
+- **Serialization** – Export/import the cache to/from any `io.Writer`/`io.Reader` using gob encoding.
+- **Concurrent-Safe** – All operations are safe for use by multiple goroutines.
+- **Zero Dependencies for Core** – Only lightweight, well-maintained dependencies ([fastime](https://github.com/kpango/fastime), [xxh3](https://github.com/zeebo/xxh3)).
 
 ## Requirement
-Go 1.18~
+
+Go 1.18 or later (generics support is required).
 
 ## Installation
+
 ```shell
 go get github.com/kpango/gache/v2
 ```
 
-## Example
+## Quick Start
+
+### Basic Set / Get
+
 ```go
-	// data sets
-	var (
-		key1 = "key"
-		key2 = 5050
-		key3 = struct{}{}
+package main
 
-		value1 = "value"
-		value2 = 88888
-		value3 = struct{}{}
-	)
+import (
+	"fmt"
 
-        // instantiate gache for any type as gc with setup default expiration.
-        // see more Options in example/main.go
-	gc := gache.New[any]().SetDefaultExpire(time.Second * 10)
+	"github.com/kpango/gache/v2"
+)
 
-	// store with expire setting
-	gc.SetWithExpire(key1, value1, time.Second*30)
-	gc.SetWithExpire(key2, value2, time.Second*60)
-	gc.SetWithExpire(key3, value3, time.Hour)	// load cache data
-	v1, ok := gc.Get(key1)
+func main() {
+	// Create a new cache for string values with default settings.
+	gc := gache.New[string]()
 
-	v2, ok := gc.Get(key2)
+	// Store a value.
+	gc.Set("greeting", "hello")
 
-	v3, ok := gc.Get(key3)
-
-        // open exported cache file
-        file, err := os.OpenFile("./gache-sample.gdb", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0755)
-	if err != nil {
-		glg.Error(err)
-		return
+	// Retrieve the value.
+	if v, ok := gc.Get("greeting"); ok {
+		fmt.Println(v) // "hello"
 	}
-
-        // export cached variable with expiration time 
-	gc.Write(context.Background(), file)
-        file.Close()
-
-        // open exported cache file
-	file, err = os.OpenFile("./gache-sample.gdb", os.O_RDONLY, 0755)
-	if err != nil {
-		glg.Error(err)
-		return
-	}
-        defer file.Close()
-
-        // instantiate new gache for any type as gcn with load exported cache from file
-	gcn := gache.New[any]().SetDefaultExpire(time.Minute).Read(file)
-
-        // gache supports range loop processing method
-	gcn.Range(context.Background(), func(k string, v any, exp int64) bool {
-		glg.Debugf("key:\t%v\nval:\t%v", k, v)
-		return true
-	})
-
-        // instantiate new gache for int64 type as gci
-        gci := gache.New[int64]()
-
-        gci.Set("sample1", int64(0))
-        gci.Set("sample2", int64(10))
-        gci.Set("sample3", int64(100))
-
-        // gache supports range loop processing method and inner function argument is int64 as contract
-	gci.Range(context.Background(), func(k string, v int64, exp int64) bool {
-		glg.Debugf("key:\t%v\nval:\t%d", k, v)
-		return true
-	})
-
-	// Optional configurations
-	// WithDefaultExpiration sets the default expiration time for keys.
-	// WithMaxKeyLength limits the max bytes of the key used to compute the shard ID.
-	// StartExpired runs a background job that periodically removes expired items.
-	// Set the expired hook function and enable it before starting the expiration daemon
-	gch := gache.New(
-		gache.WithDefaultExpiration[string](time.Minute),
-		gache.WithMaxKeyLength[string](256),
-	).SetExpiredHook(func(ctx context.Context, key string, v string) {
-		fmt.Printf("Item expired: key=%s value=%s\n", key, v)
-	}).EnableExpiredHook().StartExpired(context.Background(), time.Second*10)
-	// Store an item only if it does not already exist
-	gch.SetIfNotExists("key4", "value4")
-
-	// Extend the expiration time of an existing item
-	gch.ExtendExpire("key4", time.Minute*5)
-
-	// Read a value and refresh its expiration duration
-	v7, ok := gch.GetRefresh("key4")
-
-	// Retrieve a value regardless of its expiration state
-	v8, ok := gch.GetWithIgnoredExpire("key4")
-
-	// Retrieve a value and remove it from the cache
-	v9, ok := gch.Pop("key4")
-
-	// Get all keys currently in the cache
-	keys := gch.Keys(context.Background())
-
-	// Clear the entire cache
-	gch.Clear()
-
-	// Stop the background expiration job
-	gch.Stop()
+}
 ```
+
+### Set / Get with TTL
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/kpango/gache/v2"
+)
+
+func main() {
+	// Create a cache with a 10-second default TTL.
+	gc := gache.New[string]().SetDefaultExpire(time.Second * 10)
+
+	// Store with a custom TTL (overrides the default).
+	gc.SetWithExpire("session", "abc123", time.Minute*30)
+
+	// Retrieve the value.
+	if v, ok := gc.Get("session"); ok {
+		fmt.Println(v) // "abc123"
+	}
+
+	// Store an entry that never expires.
+	gc.SetWithExpire("permanent", "forever", gache.NoTTL)
+}
+```
+
+### Background Expiration and Hooks
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/kpango/gache/v2"
+)
+
+func main() {
+	gc := gache.New[string](
+		gache.WithDefaultExpiration[string](time.Second * 5),
+	).SetExpiredHook(func(ctx context.Context, key string, val string) {
+		fmt.Printf("expired: key=%s val=%s\n", key, val)
+	}).EnableExpiredHook().
+		StartExpired(context.Background(), time.Second*2)
+
+	gc.Set("temp", "data")
+
+	// After ~5 seconds the hook prints: expired: key=temp val=data
+	time.Sleep(time.Second * 8)
+
+	// Stop the background expiration daemon when done.
+	gc.Stop()
+}
+```
+
+### Type-Safe Caches
+
+```go
+// int64 cache – the compiler enforces the value type.
+gci := gache.New[int64]()
+gci.Set("counter", int64(42))
+if v, ok := gci.Get("counter"); ok {
+	fmt.Println(v + 1) // 43
+}
+
+// struct cache
+type User struct {
+	Name string
+	Age  int
+}
+gcu := gache.New[User]()
+gcu.Set("user:1", User{Name: "Alice", Age: 30})
+```
+
+## Example
+
+A full working example is available in [`example/main.go`](./example/main.go). It demonstrates:
+
+- Creating caches for `any`, `int64`, and `string` types.
+- Storing and retrieving values with expiration.
+- Exporting and importing cache data to/from a file.
+- Iterating over entries with `Range`.
+- Using expiration hooks and background expiration.
+- Stress-testing with large datasets.
+
+```go
+// data sets
+var (
+	key1   = "key1"
+	key2   = "key2"
+	key3   = "key3"
+	value1 = "value"
+	value2 = 88888
+	value3 = struct{}{}
+)
+
+// Create a cache for any type with a 10-second default TTL.
+gc := gache.New[any]().SetDefaultExpire(time.Second * 10)
+
+// Store entries with per-key TTLs.
+gc.SetWithExpire(key1, value1, time.Second*30)
+gc.SetWithExpire(key2, value2, time.Second*60)
+gc.SetWithExpire(key3, value3, time.Hour)
+
+// Retrieve entries.
+v1, ok := gc.Get(key1)
+v2, ok := gc.Get(key2)
+v3, ok := gc.Get(key3)
+
+// Export the cache to a file.
+file, err := os.OpenFile("./gache-sample.gdb", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0755)
+if err != nil {
+	log.Fatal(err)
+}
+gc.Write(context.Background(), file)
+file.Close()
+
+// Import the cache from the file into a new instance.
+file, err = os.OpenFile("./gache-sample.gdb", os.O_RDONLY, 0755)
+if err != nil {
+	log.Fatal(err)
+}
+defer file.Close()
+gcn := gache.New[any]().SetDefaultExpire(time.Minute)
+gcn.Read(file)
+
+// Iterate over all entries.
+gcn.Range(context.Background(), func(k string, v any, exp int64) bool {
+	fmt.Printf("key: %v, val: %v\n", k, v)
+	return true
+})
+```
+
+## API Overview
+
+Below is a summary of the `Gache[V any]` interface. For full documentation see the [Go Reference](https://pkg.go.dev/github.com/kpango/gache/v2).
+
+### Core Operations
+
+| Method | Description |
+|--------|-------------|
+| `New[V any](opts ...Option[V]) Gache[V]` | Create a new cache instance (default TTL: 30s). |
+| `Set(key string, val V)` | Store a value with the default TTL. |
+| `SetWithExpire(key string, val V, dur time.Duration)` | Store a value with a custom TTL. |
+| `Get(key string) (V, bool)` | Retrieve a value. Returns `false` if not found or expired. |
+| `Delete(key string) (V, bool)` | Remove an entry and return its value. |
+| `Clear()` | Remove all entries from the cache. |
+
+### Advanced Get / Set
+
+| Method | Description |
+|--------|-------------|
+| `GetWithExpire(key string) (V, int64, bool)` | Get a value together with its expiration time (Unix nano). |
+| `GetRefresh(key string) (V, bool)` | Get a value and refresh its TTL to the default duration. |
+| `GetRefreshWithDur(key string, dur time.Duration) (V, bool)` | Get a value and set a new TTL. |
+| `GetWithIgnoredExpire(key string) (V, bool)` | Get a value even if it has expired. |
+| `Pop(key string) (V, bool)` | Get a value and remove it from the cache in one step. |
+| `SetIfNotExists(key string, val V)` | Store only if the key does not already exist. |
+| `SetWithExpireIfNotExists(key string, val V, dur time.Duration)` | Conditional set with a custom TTL. |
+| `ExtendExpire(key string, dur time.Duration)` | Extend the TTL of an existing entry. |
+
+### Expiration Management
+
+| Method | Description |
+|--------|-------------|
+| `SetDefaultExpire(dur time.Duration) Gache[V]` | Change the default TTL. |
+| `StartExpired(ctx context.Context, dur time.Duration) Gache[V]` | Start a background daemon that removes expired entries at the given interval. |
+| `DeleteExpired(ctx context.Context) uint64` | Manually remove all expired entries; returns the number removed. |
+| `Stop()` | Stop the background expiration daemon. |
+| `SetExpiredHook(f func(context.Context, string, V)) Gache[V]` | Register a function called when an entry expires. |
+| `EnableExpiredHook() Gache[V]` | Enable the expiration hook. |
+| `DisableExpiredHook() Gache[V]` | Disable the expiration hook. |
+
+### Iteration and Inspection
+
+| Method | Description |
+|--------|-------------|
+| `Range(ctx context.Context, f func(string, V, int64) bool) Gache[V]` | Iterate over all entries. Return `false` from `f` to stop early. |
+| `Keys(ctx context.Context) []string` | Return all keys currently in the cache. |
+| `Values(ctx context.Context) []V` | Return all values currently in the cache. |
+| `Len() int` | Return the number of entries (including expired but not yet cleaned). |
+| `Size() uintptr` | Return the approximate memory usage in bytes. |
+
+### Serialization
+
+| Method | Description |
+|--------|-------------|
+| `Write(ctx context.Context, w io.Writer) error` | Export the cache contents to a writer using gob encoding. |
+| `Read(r io.Reader) error` | Import cache contents from a reader. |
+| `ToMap(ctx context.Context) *sync.Map` | Convert the cache to a `*sync.Map`. |
+| `ToRawMap(ctx context.Context) map[string]V` | Convert the cache to a plain Go map. |
+
+### Constructor Options
+
+| Option | Description |
+|--------|-------------|
+| `WithDefaultExpiration[V](dur time.Duration)` | Set the default TTL for the cache. |
+| `WithDefaultExpirationString[V](s string)` | Set the default TTL from a duration string (e.g. `"5m"`). |
+| `WithMaxKeyLength[V](n uint64)` | Limit the number of key bytes used for shard selection (default: 256). |
+| `WithExpiredHookFunc[V](f func(ctx, key, val))` | Register an expiration hook at construction time. |
+
 ## Benchmarks
 Benchmark results are shown below and benchmarked in [this](https://github.com/kpango/go-cache-lib-benchmarks) repository
 
