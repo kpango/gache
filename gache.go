@@ -316,7 +316,7 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 //	})
 func (g *gache[V]) ToMap(ctx context.Context) (m *sync.Map) {
 	m = new(sync.Map)
-	_ = g.loop(ctx, func(k string, v *value[V]) bool {
+	_ = g.loop(ctx, func(workerID int, totalWorkers int, k string, v *value[V]) bool {
 		m.Store(k, v.val)
 		return true
 	})
@@ -336,14 +336,24 @@ func (g *gache[V]) ToMap(ctx context.Context) (m *sync.Map) {
 //	m := gc.ToRawMap(context.Background())
 //	fmt.Println(m["lang"]) // "Go"
 func (g *gache[V]) ToRawMap(ctx context.Context) (m map[string]V) {
-	var mu sync.Mutex
-	m = make(map[string]V, g.Len())
-	_ = g.loop(ctx, func(k string, v *value[V]) bool {
-		mu.Lock()
-		m[k] = v.val
-		mu.Unlock()
+	var maps []map[string]V
+	_ = g.loop(ctx, func(workerID int, totalWorkers int, k string, v *value[V]) bool {
+		if len(maps) == 0 {
+			maps = make([]map[string]V, totalWorkers)
+		}
+		if maps[workerID] == nil {
+			maps[workerID] = make(map[string]V)
+		}
+		maps[workerID][k] = v.val
 		return true
 	})
+
+	m = make(map[string]V, g.Len())
+	for _, subMap := range maps {
+		for k, v := range subMap {
+			m[k] = v
+		}
+	}
 	return m
 }
 
@@ -359,14 +369,23 @@ func (g *gache[V]) ToRawMap(ctx context.Context) (m map[string]V) {
 //	keys := gc.Keys(context.Background())
 //	fmt.Println(keys) // e.g. ["x", "y"]
 func (g *gache[V]) Keys(ctx context.Context) (keys []string) {
-	var mu sync.Mutex
-	keys = make([]string, 0, g.Len())
-	_ = g.loop(ctx, func(k string, v *value[V]) bool {
-		mu.Lock()
-		keys = append(keys, k)
-		mu.Unlock()
+	var slices [][]string
+	_ = g.loop(ctx, func(workerID int, totalWorkers int, k string, v *value[V]) bool {
+		if len(slices) == 0 {
+			slices = make([][]string, totalWorkers)
+		}
+		slices[workerID] = append(slices[workerID], k)
 		return true
 	})
+
+	total := 0
+	for _, s := range slices {
+		total += len(s)
+	}
+	keys = make([]string, 0, total)
+	for _, s := range slices {
+		keys = append(keys, s...)
+	}
 	return keys
 }
 
@@ -382,14 +401,25 @@ func (g *gache[V]) Keys(ctx context.Context) (keys []string) {
 //	vals := gc.Values(context.Background())
 //	fmt.Println(vals) // e.g. ["alpha", "beta"]
 func (g *gache[V]) Values(ctx context.Context) (values []V) {
-	var mu sync.Mutex
-	values = make([]V, 0, g.Len())
-	_ = g.loop(ctx, func(k string, v *value[V]) bool {
-		mu.Lock()
-		values = append(values, v.val)
-		mu.Unlock()
+	var slices [][]V
+	_ = g.loop(ctx, func(workerID int, totalWorkers int, k string, v *value[V]) bool {
+		if len(slices) == 0 {
+			slices = make([][]V, totalWorkers)
+			// Optional: allocate some initial capacity
+			// For perfect presizing we would need to know entries per worker
+		}
+		slices[workerID] = append(slices[workerID], v.val)
 		return true
 	})
+
+	total := 0
+	for _, s := range slices {
+		total += len(s)
+	}
+	values = make([]V, 0, total)
+	for _, s := range slices {
+		values = append(values, s...)
+	}
 	return values
 }
 
@@ -531,7 +561,7 @@ func (g *gache[V]) expiration(key string) {
 //	n := gc.DeleteExpired(context.Background())
 //	fmt.Printf("removed %d expired entries\n", n)
 func (g *gache[V]) DeleteExpired(ctx context.Context) (expired uint64) {
-	return g.loop(ctx, func(k string, v *value[V]) bool {
+	return g.loop(ctx, func(workerID int, totalWorkers int, k string, v *value[V]) bool {
 		return true
 	})
 }
@@ -552,38 +582,43 @@ func (g *gache[V]) DeleteExpired(ctx context.Context) (expired uint64) {
 //	    return true // continue iteration
 //	})
 func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gache[V] {
-	_ = g.loop(ctx, func(k string, v *value[V]) bool {
+	_ = g.loop(ctx, func(workerID int, totalWorkers int, k string, v *value[V]) bool {
 		return f(k, v.val, v.expire)
 	})
 	return g
 }
 
-func (g *gache[V]) loop(ctx context.Context, f func(string, *value[V]) bool) (expiredRows uint64) {
+func (g *gache[V]) loop(ctx context.Context, f func(int, int, string, *value[V]) bool) (expiredRows uint64) {
 	nprocs := min(min(runtime.GOMAXPROCS(0), 32), slen)
-	var fn func(k string, v *value[V]) bool
+	var makeFn func(workerID int) func(k string, v *value[V]) bool
 	if f != nil {
-		fn = func(k string, v *value[V]) bool {
-			if v != nil {
-				if !v.isValid() {
-					g.expiration(k)
-					atomic.AddUint64(&expiredRows, 1)
-				} else {
-					return f(k, v)
+		makeFn = func(workerID int) func(k string, v *value[V]) bool {
+			return func(k string, v *value[V]) bool {
+				if v != nil {
+					if !v.isValid() {
+						g.expiration(k)
+						atomic.AddUint64(&expiredRows, 1)
+					} else {
+						return f(workerID, nprocs, k, v)
+					}
 				}
+				return true
 			}
-			return true
 		}
 	} else {
-		fn = func(k string, v *value[V]) bool {
-			if v != nil && !v.isValid() {
-				g.expiration(k)
-				atomic.AddUint64(&expiredRows, 1)
+		makeFn = func(workerID int) func(k string, v *value[V]) bool {
+			return func(k string, v *value[V]) bool {
+				if v != nil && !v.isValid() {
+					g.expiration(k)
+					atomic.AddUint64(&expiredRows, 1)
+				}
+				return true
 			}
-			return true
 		}
 	}
 
 	if nprocs <= 1 {
+		fn := makeFn(0)
 		for i := range slen {
 			if ctx.Err() != nil {
 				break
@@ -595,7 +630,8 @@ func (g *gache[V]) loop(ctx context.Context, f func(string, *value[V]) bool) (ex
 
 	var idx atomic.Uint64
 	var wg sync.WaitGroup
-	worker := func() {
+	worker := func(workerID int) {
+		fn := makeFn(workerID)
 		for {
 			endIdx := idx.Add(16)
 			startIdx := endIdx - 16
@@ -614,9 +650,9 @@ func (g *gache[V]) loop(ctx context.Context, f func(string, *value[V]) bool) (ex
 
 	wg.Add(nprocs)
 	for i := 0; i < nprocs-1; i++ {
-		go worker()
+		go worker(i)
 	}
-	worker()
+	worker(nprocs - 1)
 	wg.Wait()
 	return atomic.LoadUint64(&expiredRows)
 }
