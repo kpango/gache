@@ -679,7 +679,7 @@ func (g *gache[V]) Write(ctx context.Context, w io.Writer) error {
 
 // Read deserialises cache entries from r (previously written by [Gache.Write])
 // and stores them in the cache using the current default expiration. Each entry
-// is inserted asynchronously via a goroutine.
+// is inserted synchronously.
 //
 // Example:
 //
@@ -698,7 +698,7 @@ func (g *gache[V]) Read(r io.Reader) error {
 		return err
 	}
 	for k, v := range m {
-		go g.Set(k, v)
+		g.Set(k, v)
 	}
 	return nil
 }

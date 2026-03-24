@@ -1,0 +1,7 @@
+goos: linux
+goarch: amd64
+pkg: github.com/kpango/gache/v2
+cpu: Intel(R) Xeon(R) Processor @ 2.30GHz
+BenchmarkReadMethod-4   	     100	  10933648 ns/op	 4315562 B/op	   69277 allocs/op
+PASS
+ok  	github.com/kpango/gache/v2	9.368s
