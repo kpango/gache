@@ -308,7 +308,9 @@ func TestGacheLenConcurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for id := range numGoroutines {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			r := rand.New(rand.NewSource(int64(id)))
 			for i := range opsPerGoroutine {
 				key := fmt.Sprintf("key-%d", r.Intn(keyRange))
@@ -319,7 +321,7 @@ func TestGacheLenConcurrent(t *testing.T) {
 					g.Delete(key)
 				}
 			}
-		})
+		}()
 	}
 	wg.Wait()
 
@@ -349,12 +351,14 @@ func TestGacheLenConcurrentStoreDelete(t *testing.T) {
 	// Phase 1: Store unique keys concurrently
 	var wg sync.WaitGroup
 	for id := range numGoroutines {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			base := id * keysPerGoroutine
 			for i := range keysPerGoroutine {
 				g.Set(fmt.Sprintf("key-%d", base+i), i)
 			}
-		})
+		}()
 	}
 	wg.Wait()
 
@@ -365,12 +369,14 @@ func TestGacheLenConcurrentStoreDelete(t *testing.T) {
 
 	// Phase 2: Delete all keys concurrently
 	for id := range numGoroutines {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			base := id * keysPerGoroutine
 			for i := range keysPerGoroutine {
 				g.Delete(fmt.Sprintf("key-%d", base+i))
 			}
-		})
+		}()
 	}
 	wg.Wait()
 
@@ -394,7 +400,9 @@ func TestGacheLenClearConcurrent(t *testing.T) {
 
 	// Writers
 	for id := range numWriters {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			r := rand.New(rand.NewSource(int64(id)))
 			for {
 				select {
@@ -404,12 +412,14 @@ func TestGacheLenClearConcurrent(t *testing.T) {
 					g.Set(fmt.Sprintf("k-%d", r.Intn(100)), id)
 				}
 			}
-		})
+		}()
 	}
 
 	// Deleters
 	for id := range numDeleters {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			r := rand.New(rand.NewSource(int64(id + 100)))
 			for {
 				select {
@@ -419,7 +429,7 @@ func TestGacheLenClearConcurrent(t *testing.T) {
 					g.Delete(fmt.Sprintf("k-%d", r.Intn(100)))
 				}
 			}
-		})
+		}()
 	}
 
 	// Periodically Clear

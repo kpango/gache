@@ -251,16 +251,20 @@ func BenchmarkHeavyMixedInt_gache(b *testing.B) {
 	gc := New[int]().SetDefaultExpire(10 * time.Second)
 	var wg sync.WaitGroup
 	for range 10000 {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			for i := range 8192 {
 				gc.Set(Int64Key(int64(i)), i+1)
 			}
-		})
-		wg.Go(func() {
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			for i := range 8192 {
 				gc.Get(Int64Key(int64(i)))
 			}
-		})
+		}()
 	}
 	wg.Wait()
 
@@ -326,11 +330,13 @@ func BenchmarkHeavyReadInt_gache(b *testing.B) {
 	}
 	var wg sync.WaitGroup
 	for range 10000 {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			for i := range 1024 {
 				gc.Get(Int64Key(int64(i)))
 			}
-		})
+		}()
 	}
 	wg.Wait()
 
@@ -345,11 +351,13 @@ func BenchmarkHeavyWriteInt_gache(b *testing.B) {
 	var wg sync.WaitGroup
 	for index := range 10000 {
 		start := index
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			for i := range 8192 {
 				gc.Set(Int64Key(int64(i+start)), i+1)
 			}
-		})
+		}()
 	}
 	wg.Wait()
 
@@ -364,11 +372,13 @@ func BenchmarkHeavyWrite1K_gache(b *testing.B) {
 	var wg sync.WaitGroup
 	for index := range 10000 {
 		start := index
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			for i := range 8192 {
 				gc.Set(Int64Key(int64(i+start)), Data1K)
 			}
-		})
+		}()
 	}
 	wg.Wait()
 
@@ -555,7 +565,7 @@ func BenchmarkLoop(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				g.loop(ctx, func(k string, v *value[string]) bool {
+				g.loop(ctx, func(_ int, k string, v *value[string]) bool {
 					return true
 				})
 			}

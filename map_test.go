@@ -183,7 +183,9 @@ func TestConcurrentRange(t *testing.T) {
 	}()
 	for g := int64(runtime.GOMAXPROCS(0)); g > 0; g-- {
 		r := rand.New(rand.NewSource(g))
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			for i := int64(0); ; i++ {
 				select {
 				case <-done:
@@ -198,7 +200,7 @@ func TestConcurrentRange(t *testing.T) {
 					}
 				}
 			}
-		})
+		}()
 	}
 
 	iters := 1 << 10
@@ -417,7 +419,9 @@ func TestMapLenConcurrent(t *testing.T) {
 	// Half goroutines do Store, the other half do Delete, all on a shared key range.
 	// After all goroutines complete, verify that Len() matches the actual map contents.
 	for id := range numGoroutines {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			r := rand.New(rand.NewSource(int64(id)))
 			for i := range opsPerGoroutine {
 				key := r.Intn(keyRange)
@@ -436,7 +440,7 @@ func TestMapLenConcurrent(t *testing.T) {
 					m.CompareAndDelete(key, i)
 				}
 			}
-		})
+		}()
 	}
 	wg.Wait()
 
@@ -465,22 +469,26 @@ func TestMapLenConcurrentStoreDelete(t *testing.T) {
 	var wg sync.WaitGroup
 	// Phase 1: Store unique keys per goroutine
 	for g := range numGoroutines {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			base := g * keysPerGoroutine
 			for i := range keysPerGoroutine {
 				m.Store(base+i, i)
 			}
-		})
+		}()
 	}
 
 	// Phase 1 also: concurrent deletions (some will miss, that's fine)
 	for g := range numGoroutines {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			base := g * keysPerGoroutine
 			for i := range keysPerGoroutine {
 				m.Delete(base + i)
 			}
-		})
+		}()
 	}
 	wg.Wait()
 
@@ -510,7 +518,9 @@ func TestMapLenClearConcurrent(t *testing.T) {
 
 	// Writers
 	for id := range numWriters {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			r := rand.New(rand.NewSource(int64(id)))
 			for {
 				select {
@@ -520,12 +530,14 @@ func TestMapLenClearConcurrent(t *testing.T) {
 					m.Store(r.Intn(100), id)
 				}
 			}
-		})
+		}()
 	}
 
 	// Deleters
 	for id := range numDeleters {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			r := rand.New(rand.NewSource(int64(id + 100)))
 			for {
 				select {
@@ -535,7 +547,7 @@ func TestMapLenClearConcurrent(t *testing.T) {
 					m.Delete(r.Intn(100))
 				}
 			}
-		})
+		}()
 	}
 
 	// Periodically Clear and check that Len doesn't go negative
