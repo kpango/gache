@@ -83,6 +83,8 @@ type (
 	}
 
 	value[V any] struct {
+		mu     sync.RWMutex
+		key    string
 		val    V
 		expire int64
 	}
@@ -177,16 +179,24 @@ func getShardID(key string, kl uint64) (id uint64) {
 }
 
 // isValid checks expiration of value.
-func (v *value[V]) isValid() (valid bool) {
-	return v.expire <= 0 || fastime.UnixNanoNow() <= v.expire
+func (v *value[V]) isValid(key string) (valid bool, match bool) {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	if v.key != key {
+		return false, false
+	}
+	return v.expire <= 0 || fastime.UnixNanoNow() <= v.expire, true
 }
 
 // reset zeros out all fields to prevent memory leaks from retained references
 // when the value object is returned to the pool for reuse.
 func (v *value[V]) reset() {
+	v.mu.Lock()
 	var zero V
+	v.key = ""
 	v.val = zero
 	v.expire = 0
+	v.mu.Unlock()
 }
 
 // SetDefaultExpire sets the default expiration duration used by [Gache.Set] and
@@ -317,7 +327,11 @@ func (g *gache[V]) StartExpired(ctx context.Context, dur time.Duration) Gache[V]
 func (g *gache[V]) ToMap(ctx context.Context) (m *sync.Map) {
 	m = new(sync.Map)
 	_ = g.loop(ctx, func(k string, v *value[V]) bool {
-		m.Store(k, v.val)
+		v.mu.RLock()
+		if v.key == k {
+			m.Store(k, v.val)
+		}
+		v.mu.RUnlock()
 		return true
 	})
 	return m
@@ -339,9 +353,13 @@ func (g *gache[V]) ToRawMap(ctx context.Context) (m map[string]V) {
 	var mu sync.Mutex
 	m = make(map[string]V, g.Len())
 	_ = g.loop(ctx, func(k string, v *value[V]) bool {
-		mu.Lock()
-		m[k] = v.val
-		mu.Unlock()
+		v.mu.RLock()
+		if v.key == k {
+			mu.Lock()
+			m[k] = v.val
+			mu.Unlock()
+		}
+		v.mu.RUnlock()
 		return true
 	})
 	return m
@@ -362,9 +380,13 @@ func (g *gache[V]) Keys(ctx context.Context) (keys []string) {
 	var mu sync.Mutex
 	keys = make([]string, 0, g.Len())
 	_ = g.loop(ctx, func(k string, v *value[V]) bool {
-		mu.Lock()
-		keys = append(keys, k)
-		mu.Unlock()
+		v.mu.RLock()
+		if v.key == k {
+			mu.Lock()
+			keys = append(keys, k)
+			mu.Unlock()
+		}
+		v.mu.RUnlock()
 		return true
 	})
 	return keys
@@ -385,9 +407,13 @@ func (g *gache[V]) Values(ctx context.Context) (values []V) {
 	var mu sync.Mutex
 	values = make([]V, 0, g.Len())
 	_ = g.loop(ctx, func(k string, v *value[V]) bool {
-		mu.Lock()
-		values = append(values, v.val)
-		mu.Unlock()
+		v.mu.RLock()
+		if v.key == k {
+			mu.Lock()
+			values = append(values, v.val)
+			mu.Unlock()
+		}
+		v.mu.RUnlock()
 		return true
 	})
 	return values
@@ -395,18 +421,26 @@ func (g *gache[V]) Values(ctx context.Context) (values []V) {
 
 // get returns value & exists from key.
 func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
-	var val *value[V]
-	val, ok = g.shards[getShardID(key, g.maxKeyLength)].LoadPointer(key)
+	val, ok := g.shards[getShardID(key, g.maxKeyLength)].LoadPointer(key)
 	if !ok {
 		return v, 0, false
 	}
 
-	if val.isValid() {
-		return val.val, val.expire, true
+	val.mu.RLock()
+	if val.key != key {
+		val.mu.RUnlock()
+		return v, 0, false
+	}
+	v = val.val
+	expire = val.expire
+	val.mu.RUnlock()
+
+	if expire <= 0 || fastime.UnixNanoNow() <= expire {
+		return v, expire, true
 	}
 
 	g.expiration(key)
-	return v, val.expire, false
+	return v, expire, false
 }
 
 // Get retrieves the value associated with key. The second return value
@@ -450,8 +484,11 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	}
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
 	newVal := g.valPool.Get().(*value[V])
+	newVal.mu.Lock()
+	newVal.key = key
 	newVal.val = val
 	newVal.expire = expire
+	newVal.mu.Unlock()
 	old, loaded := shard.SwapPointer(key, newVal)
 	if loaded {
 		old.reset()
@@ -495,14 +532,19 @@ func (g *gache[V]) Set(key string, val V) {
 //	    fmt.Println("deleted:", v) // "deleted: data"
 //	}
 func (g *gache[V]) Delete(key string) (v V, loaded bool) {
-	var val *value[V]
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
-	val, loaded = shard.LoadAndDeletePointer(key)
+	val, loaded := shard.LoadAndDeletePointer(key)
 	if loaded {
+		val.mu.RLock()
+		if val.key != key {
+			val.mu.RUnlock()
+			return v, false
+		}
 		v = val.val
+		val.mu.RUnlock()
 		val.reset()
 		g.valPool.Put(val)
-		return v, loaded
+		return v, true
 	}
 	return v, false
 }
@@ -553,7 +595,15 @@ func (g *gache[V]) DeleteExpired(ctx context.Context) (expired uint64) {
 //	})
 func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gache[V] {
 	_ = g.loop(ctx, func(k string, v *value[V]) bool {
-		return f(k, v.val, v.expire)
+		v.mu.RLock()
+		if v.key != k {
+			v.mu.RUnlock()
+			return true
+		}
+		val := v.val
+		exp := v.expire
+		v.mu.RUnlock()
+		return f(k, val, exp)
 	})
 	return g
 }
@@ -564,7 +614,11 @@ func (g *gache[V]) loop(ctx context.Context, f func(string, *value[V]) bool) (ex
 	if f != nil {
 		fn = func(k string, v *value[V]) bool {
 			if v != nil {
-				if !v.isValid() {
+				valid, match := v.isValid(k)
+				if !match {
+					return true
+				}
+				if !valid {
 					g.expiration(k)
 					atomic.AddUint64(&expiredRows, 1)
 				} else {
@@ -575,9 +629,12 @@ func (g *gache[V]) loop(ctx context.Context, f func(string, *value[V]) bool) (ex
 		}
 	} else {
 		fn = func(k string, v *value[V]) bool {
-			if v != nil && !v.isValid() {
-				g.expiration(k)
-				atomic.AddUint64(&expiredRows, 1)
+			if v != nil {
+				valid, match := v.isValid(k)
+				if match && !valid {
+					g.expiration(k)
+					atomic.AddUint64(&expiredRows, 1)
+				}
 			}
 			return true
 		}
@@ -764,7 +821,11 @@ func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
 			}
 			return
 		}
-		if !val.isValid() {
+		valid, match := val.isValid(key)
+		if !match {
+			continue
+		}
+		if !valid {
 			g.expiration(key)
 			if newVal != nil {
 				newVal.reset()
@@ -776,8 +837,22 @@ func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
 		if newVal == nil {
 			newVal = g.valPool.Get().(*value[V])
 		}
-		newVal.val = val.val
-		newVal.expire = val.expire + int64(addExp)
+
+		var copied bool
+		val.mu.RLock()
+		if val.key == key {
+			newVal.mu.Lock()
+			newVal.key = key
+			newVal.val = val.val
+			newVal.expire = val.expire + int64(addExp)
+			newVal.mu.Unlock()
+			copied = true
+		}
+		val.mu.RUnlock()
+
+		if !copied {
+			continue
+		}
 
 		if shard.CompareAndSwapPointer(key, val, newVal) {
 			val.reset()
@@ -829,7 +904,11 @@ func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool)
 			}
 			return v, false
 		}
-		if !val.isValid() {
+		valid, match := val.isValid(key)
+		if !match {
+			continue
+		}
+		if !valid {
 			g.expiration(key)
 			if newVal != nil {
 				newVal.reset()
@@ -841,13 +920,28 @@ func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool)
 		if newVal == nil {
 			newVal = g.valPool.Get().(*value[V])
 		}
-		newVal.val = val.val
-		newVal.expire = fastime.UnixNanoNow() + int64(d)
+
+		var copied bool
+		val.mu.RLock()
+		if val.key == key {
+			newVal.mu.Lock()
+			newVal.key = key
+			newVal.val = val.val
+			newVal.expire = fastime.UnixNanoNow() + int64(d)
+			newVal.mu.Unlock()
+			v = newVal.val
+			copied = true
+		}
+		val.mu.RUnlock()
+
+		if !copied {
+			continue
+		}
 
 		if shard.CompareAndSwapPointer(key, val, newVal) {
 			val.reset()
 			g.valPool.Put(val)
-			return newVal.val, true
+			return v, true
 		}
 	}
 }
@@ -871,7 +965,14 @@ func (g *gache[V]) GetWithIgnoredExpire(key string) (v V, ok bool) {
 	if !ok {
 		return v, false
 	}
-	return val.val, true
+	val.mu.RLock()
+	if val.key != key {
+		val.mu.RUnlock()
+		return v, false
+	}
+	v = val.val
+	val.mu.RUnlock()
+	return v, true
 }
 
 // Pop atomically retrieves and removes the entry for key. It returns the value
@@ -894,8 +995,14 @@ func (g *gache[V]) Pop(key string) (v V, ok bool) {
 	if !loaded {
 		return v, false
 	}
+	val.mu.RLock()
+	if val.key != key {
+		val.mu.RUnlock()
+		return v, false
+	}
 	v = val.val
-	valid := val.isValid()
+	valid := val.expire <= 0 || fastime.UnixNanoNow() <= val.expire
+	val.mu.RUnlock()
 	val.reset()
 	g.valPool.Put(val)
 	if valid {
@@ -942,8 +1049,11 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 	}
 
 	newVal := g.valPool.Get().(*value[V])
+	newVal.mu.Lock()
+	newVal.key = key
 	newVal.val = val
 	newVal.expire = exp
+	newVal.mu.Unlock()
 
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
 	for {
@@ -954,7 +1064,11 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 
 		// loaded: actual is the existing value (*value[V])
 
-		if actual.isValid() {
+		valid, match := actual.isValid(key)
+		if !match {
+			continue
+		}
+		if valid {
 			// New value not used
 			newVal.reset()
 			g.valPool.Put(newVal)
