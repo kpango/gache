@@ -555,7 +555,7 @@ func BenchmarkLoop(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				g.loop(ctx, func(k string, v *value[string]) bool {
+				g.loop(ctx, func(_ int, k string, v *value[string]) bool {
 					return true
 				})
 			}

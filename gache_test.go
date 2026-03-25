@@ -326,7 +326,7 @@ func TestGacheLenConcurrent(t *testing.T) {
 	// Verify Len matches actual count from Range
 	actual := 0
 	for i := range g.shards {
-		g.shards[i].Range(func(k string, v value[int]) bool {
+		g.shards[i].RangePointer(func(k string, v *value[int]) bool {
 			actual++
 			return true
 		})
@@ -434,7 +434,7 @@ func TestGacheLenClearConcurrent(t *testing.T) {
 	// Final check: Len matches actual count after all goroutines have stopped
 	actual := 0
 	for i := range g.shards {
-		g.shards[i].Range(func(k string, v value[int]) bool {
+		g.shards[i].RangePointer(func(k string, v *value[int]) bool {
 			actual++
 			return true
 		})
