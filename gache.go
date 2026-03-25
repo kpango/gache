@@ -72,11 +72,11 @@ type (
 
 	// gache is base instance type.
 	gache[V any] struct {
-		shards         [slen]*Map[string, value[V]]
-		cancel         atomic.Pointer[context.CancelFunc]
-		expChan        chan kv[V]
-		expFunc        func(context.Context, string, V)
-		valPool        *sync.Pool
+		shards  [slen]*Map[string, value[V]]
+		cancel  atomic.Pointer[context.CancelFunc]
+		expChan chan kv[V]
+		expFunc func(context.Context, string, V)
+
 		expFuncEnabled bool
 		expire         int64
 		maxKeyLength   uint64
@@ -136,11 +136,6 @@ var hashSeed = maphash.MakeSeed()
 //	)
 func New[V any](opts ...Option[V]) Gache[V] {
 	g := new(gache[V])
-	g.valPool = &sync.Pool{
-		New: func() any {
-			return new(value[V])
-		},
-	}
 	for i := range g.shards {
 		g.shards[i] = newMap[V]()
 	}
@@ -183,11 +178,6 @@ func (v *value[V]) isValid() (valid bool) {
 
 // reset zeros out all fields to prevent memory leaks from retained references
 // when the value object is returned to the pool for reuse.
-func (v *value[V]) reset() {
-	var zero V
-	v.val = zero
-	v.expire = 0
-}
 
 // SetDefaultExpire sets the default expiration duration used by [Gache.Set] and
 // other methods that do not accept an explicit TTL. The change takes effect
@@ -449,14 +439,10 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 		expire = fastime.UnixNanoNow() + expire
 	}
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
-	newVal := g.valPool.Get().(*value[V])
+	newVal := new(value[V])
 	newVal.val = val
 	newVal.expire = expire
-	old, loaded := shard.SwapPointer(key, newVal)
-	if loaded {
-		old.reset()
-		g.valPool.Put(old)
-	}
+	shard.SwapPointer(key, newVal)
 }
 
 // SetWithExpire stores the key-value pair with the given expiration duration.
@@ -495,14 +481,10 @@ func (g *gache[V]) Set(key string, val V) {
 //	    fmt.Println("deleted:", v) // "deleted: data"
 //	}
 func (g *gache[V]) Delete(key string) (v V, loaded bool) {
-	var val *value[V]
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
-	val, loaded = shard.LoadAndDeletePointer(key)
+	val, loaded := shard.LoadAndDeletePointer(key)
 	if loaded {
-		v = val.val
-		val.reset()
-		g.valPool.Put(val)
-		return v, loaded
+		return val.val, true
 	}
 	return v, false
 }
@@ -758,30 +740,20 @@ func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
 	for {
 		val, ok := shard.LoadPointer(key)
 		if !ok {
-			if newVal != nil {
-				newVal.reset()
-				g.valPool.Put(newVal)
-			}
 			return
 		}
 		if !val.isValid() {
 			g.expiration(key)
-			if newVal != nil {
-				newVal.reset()
-				g.valPool.Put(newVal)
-			}
 			return
 		}
 
 		if newVal == nil {
-			newVal = g.valPool.Get().(*value[V])
+			newVal = new(value[V])
 		}
 		newVal.val = val.val
 		newVal.expire = val.expire + int64(addExp)
 
 		if shard.CompareAndSwapPointer(key, val, newVal) {
-			val.reset()
-			g.valPool.Put(val)
 			return
 		}
 	}
@@ -823,30 +795,20 @@ func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool)
 	for {
 		val, ok := shard.LoadPointer(key)
 		if !ok {
-			if newVal != nil {
-				newVal.reset()
-				g.valPool.Put(newVal)
-			}
 			return v, false
 		}
 		if !val.isValid() {
 			g.expiration(key)
-			if newVal != nil {
-				newVal.reset()
-				g.valPool.Put(newVal)
-			}
 			return v, false
 		}
 
 		if newVal == nil {
-			newVal = g.valPool.Get().(*value[V])
+			newVal = new(value[V])
 		}
 		newVal.val = val.val
 		newVal.expire = fastime.UnixNanoNow() + int64(d)
 
 		if shard.CompareAndSwapPointer(key, val, newVal) {
-			val.reset()
-			g.valPool.Put(val)
 			return newVal.val, true
 		}
 	}
@@ -896,8 +858,6 @@ func (g *gache[V]) Pop(key string) (v V, ok bool) {
 	}
 	v = val.val
 	valid := val.isValid()
-	val.reset()
-	g.valPool.Put(val)
 	if valid {
 		return v, true
 	}
@@ -941,7 +901,7 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 		exp += fastime.UnixNanoNow()
 	}
 
-	newVal := g.valPool.Get().(*value[V])
+	newVal := new(value[V])
 	newVal.val = val
 	newVal.expire = exp
 
@@ -956,16 +916,12 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 
 		if actual.isValid() {
 			// New value not used
-			newVal.reset()
-			g.valPool.Put(newVal)
 			return
 		}
 
 		// actual is expired. Replace it.
 		if shard.CompareAndSwapPointer(key, actual, newVal) {
 			// We replaced actual with newVal.
-			actual.reset()
-			g.valPool.Put(actual)
 			return
 		}
 		// CAS failed, loop again.
