@@ -443,3 +443,80 @@ func TestGacheLenClearConcurrent(t *testing.T) {
 		t.Fatalf("final Len() = %d, counted %d entries", got, actual)
 	}
 }
+
+func TestDataRace(t *testing.T) {
+	c := New[string]()
+	c.Set("key", "value")
+
+	var wg sync.WaitGroup
+	const (
+		numGoroutines = 100
+		iterations    = 1000
+	)
+
+	// Vary access patterns, increase goroutines, introduce delays
+	for range numGoroutines {
+		wg.Go(func() {
+			for j := range iterations {
+				// Introduce random delay
+				time.Sleep(time.Duration(rand.Intn(5)) * time.Nanosecond)
+
+				key := fmt.Sprintf("key_%d", j%50)
+				val := fmt.Sprintf("val_%d", j)
+
+				switch rand.Intn(13) {
+				case 0:
+					c.Get(key)
+				case 1:
+					c.Set(key, val)
+				case 2:
+					c.Delete(key)
+				case 3:
+					c.SetWithExpire(key, val, time.Millisecond*10)
+				case 4:
+					c.GetWithExpire(key)
+				case 5:
+					c.Pop(key)
+				case 6:
+					c.SetIfNotExists(key, val)
+				case 7:
+					c.ExtendExpire(key, time.Millisecond*5)
+				case 8:
+					c.GetRefresh(key)
+				case 9:
+					c.Len()
+				case 10:
+					c.Keys(t.Context())
+				case 11:
+					c.Values(t.Context())
+				case 12:
+					c.Range(t.Context(), func(k string, v string, exp int64) bool {
+						return true
+					})
+				}
+			}
+		})
+	}
+
+	wg.Wait()
+
+	// Assert final state consistency
+	c.Clear()
+	if l := c.Len(); l != 0 {
+		t.Fatalf("expected length 0 after Clear, got %d", l)
+	}
+
+	c.Set("final_key", "final_value")
+	if v, ok := c.Get("final_key"); !ok || v != "final_value" {
+		t.Fatalf("expected 'final_value', got %v (ok: %t)", v, ok)
+	}
+
+	if l := c.Len(); l != 1 {
+		t.Fatalf("expected length 1 after setting final key, got %d", l)
+	}
+
+	keys := c.Keys(t.Context())
+	if len(keys) != 1 || keys[0] != "final_key" {
+		t.Fatalf("expected only 'final_key' in keys, got %v", keys)
+	}
+}

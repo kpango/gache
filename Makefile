@@ -11,6 +11,7 @@ endif
 endif
 SAFE_BRANCH := $(shell echo "$(CURRENT_BRANCH)" | tr '/' '-')
 SAFE_BASE := $(shell echo "$(BASE_BRANCH)" | tr '/' '-')
+XARGS_NO_RUN_IF_EMPTY := $(eval XARGS_NO_RUN_IF_EMPTY := $(shell xargs --version 2>/dev/null | head -1 | grep -qi gnu && echo -r))$(XARGS_NO_RUN_IF_EMPTY)
 
 GO_VERSION := 1.26.1
 GOPATH := $(eval GOPATH := $(shell go env GOPATH))$(GOPATH)
@@ -116,6 +117,31 @@ format:
 
 lint:
 	golangci-lint run --config $(ROOTDIR)/.golangci.json --fix
+
+.PHONY: perm
+## set correct permissions for dirs and files
+perm:
+	find $(ROOTDIR) -type d -not -path "$(ROOTDIR)/.git*" -exec chmod -R 755 {} \;
+	@if [ -f "$(ROOTDIR)/.gitfiles" ]; then \
+		grep -vE '^\s*#' "$(ROOTDIR)/.gitfiles" | grep -v gitignore \
+		| xargs $(XARGS_NO_RUN_IF_EMPTY) -I {} -P"$(CORES)" chmod 644 "{}"; \
+	fi
+	if [ -d "$(ROOTDIR)/.git" ]; then \
+		chmod 750 "$(ROOTDIR)/.git"; \
+		if [ -f "$(ROOTDIR)/.git/config" ]; then \
+			chmod 644 "$(ROOTDIR)/.git/config"; \
+		fi; \
+	if [ -d "$(ROOTDIR)/.git/hooks" ]; then \
+	find "$(ROOTDIR)/.git/hooks" -type f -exec chmod 755 {} \;; \
+	fi; \
+	fi
+	if [ -f "$(ROOTDIR)/.gitignore" ]; then \
+		chmod 644 "$(ROOTDIR)/.gitignore"; \
+	fi
+	if [ -f "$(ROOTDIR)/.gitattributes" ]; then \
+		chmod 644 "$(ROOTDIR)/.gitattributes"; \
+	fi
+
 
 $(BENCH_DIR) $(WORKTREE_DIR):
 	mkdir -p $@
