@@ -754,9 +754,53 @@ func (g *gache[V]) Read(r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	for k, v := range m {
-		go g.Set(k, v)
+
+	nprocs := min(min(runtime.GOMAXPROCS(0), 32), slen)
+	if len(m) < nprocs {
+		nprocs = len(m)
 	}
+	if nprocs <= 0 {
+		return nil
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(nprocs)
+
+	type kv struct {
+		k string
+		v V
+	}
+
+	const batchSize = 50
+	ch := make(chan []kv, nprocs*16)
+
+	worker := func() {
+		for batch := range ch {
+			for i := 0; i < len(batch); i++ {
+				g.Set(batch[i].k, batch[i].v)
+			}
+		}
+		wg.Done()
+	}
+
+	for i := 0; i < nprocs-1; i++ {
+		go worker()
+	}
+	go worker()
+
+	batch := make([]kv, 0, batchSize)
+	for k, v := range m {
+		batch = append(batch, kv{k, v})
+		if len(batch) >= batchSize {
+			ch <- batch
+			batch = make([]kv, 0, batchSize)
+		}
+	}
+	if len(batch) > 0 {
+		ch <- batch
+	}
+	close(ch)
+	wg.Wait()
 	return nil
 }
 
