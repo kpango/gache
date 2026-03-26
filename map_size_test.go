@@ -1,10 +1,6 @@
 // Copyright (c) 2024 The Go Authors. All rights reserved.
 // Modified by kpango.
 
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-
 //    * Redistributions of source code must retain the above copyright
 // notice, this list of conditions and the following disclaimer.
 //    * Redistributions in binary form must reproduce the above
@@ -35,39 +31,8 @@ import (
 	"unsafe"
 )
 
-// TestGacheMapSizeWithExpungedEntries verifies that Size() does not count the
-// value size for expunged entries (entries whose pointer equals the shared
-// expunged marker).  An entry becomes expunged when it is deleted while in the
-// read-only map and then dirtyLocked() runs: nil → expunged transition.
-func TestGacheMapSizeWithExpungedEntries(t *testing.T) {
-	// Store a key, delete it (sets p → nil), then trigger a dirty-promotion
-	// cycle so that dirtyLocked() marks the nil entry as expunged.
-	m := new(Map[int, int])
-	m.Store(1, 100)
-	m.Delete(1)
-
-	// Force a dirty-map promotion: storing a new key while the read map is
-	// amended causes dirtyLocked() to run and expunge nil entries.
-	m.Store(2, 200)
-
-	sizeBefore := m.Size()
-
-	// Add more entries with values to make sure the size grows.
-	m.Store(3, 300)
-	sizeAfter := m.Size()
-
-	if sizeAfter <= sizeBefore {
-		t.Errorf("Size() should increase after adding an entry: before=%d after=%d", sizeBefore, sizeAfter)
-	}
-
-	// Expunged entries must not contribute value size.  We verify indirectly
-	// by checking that the map is consistent (no panic / negative size).
-	if sizeBefore == 0 {
-		t.Errorf("Size() returned 0 unexpectedly")
-	}
-}
-
-func TestGacheMapSize(t *testing.T) {
+// TestGache_MapSize verifies that gache's total memory size footprint is calculated correctly encompassing active entries and internal structures.
+func TestGache_MapSize(t *testing.T) {
 	gacheMap := new(Map[int, int])
 	gacheMap.Store(1, 1)
 
@@ -77,7 +42,7 @@ func TestGacheMapSize(t *testing.T) {
 	}
 
 	m := make(map[int]*entry[int])
-	m[1] = newEntryPointer(new(1), new(atomic.Int64))
+	m[1] = newEntryPointer(new(int), new(atomic.Int64))
 
 	expectedSize := unsafe.Sizeof(gacheMap.mu) +
 		unsafe.Sizeof(gacheMap.read) +
@@ -85,7 +50,30 @@ func TestGacheMapSize(t *testing.T) {
 		mapSize(gacheMap.dirty)
 
 	// Allow for some slack due to readOnly struct and entry sizes
+
 	if size < expectedSize {
 		t.Errorf("gacheMap.Size() %d is smaller than expected lower bound %d", size, expectedSize)
+	}
+}
+
+// TestGache_MapSizeWithExpungedEntries ensures that entries actively expunged from the map do not falsely inflate the reported byte size.
+func TestGache_MapSizeWithExpungedEntries(t *testing.T) {
+	m := new(Map[int, int])
+	m.Store(1, 100)
+	m.Delete(1)
+
+	m.Store(2, 200)
+
+	sizeBefore := m.Size()
+
+	m.Store(3, 300)
+	sizeAfter := m.Size()
+
+	if sizeAfter <= sizeBefore {
+		t.Errorf("Size() should increase after adding an entry: before=%d after=%d", sizeBefore, sizeAfter)
+	}
+
+	if sizeBefore == 0 {
+		t.Errorf("Size() returned 0 unexpectedly")
 	}
 }
