@@ -629,12 +629,14 @@ func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gac
 }
 
 func (g *gache[V]) numWorkers() int {
-	nprocs := runtime.GOMAXPROCS(0)
-	if g.maxWorkers > 0 && nprocs > g.maxWorkers {
-		nprocs = g.maxWorkers
+	// If maxWorkers is zero or negative, disable concurrency by using a single worker.
+	if g.maxWorkers <= 0 {
+		return 1
 	}
-	if nprocs <= 0 {
-		nprocs = 1
+
+	nprocs := runtime.GOMAXPROCS(0)
+	if nprocs > g.maxWorkers {
+		nprocs = g.maxWorkers
 	}
 	return nprocs
 }
