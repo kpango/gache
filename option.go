@@ -51,8 +51,11 @@ func WithMaxKeyLength[V any](kl uint64) Option[V] {
 }
 
 // WithMaxWorkers sets the maximum number of concurrent workers used for
-// parallel operations (like Keys, Values, ToRawMap). A value <= 0 disables
-// concurrency for these methods. The default is runtime.NumCPU() * 2.
+// parallel operations that fan out work across shards, including Range,
+// DeleteExpired, ToMap, Keys, Values and ToRawMap. A value <= 0 disables
+// this limit and lets gache choose a default based on runtime.GOMAXPROCS(0).
+// If not set, the default number of workers is derived from
+// runtime.GOMAXPROCS(0) at construction time.
 func WithMaxWorkers[V any](workers int) Option[V] {
 	return func(g *gache[V]) error {
 		g.maxWorkers = workers
