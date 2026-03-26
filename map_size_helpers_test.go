@@ -1,10 +1,6 @@
 // Copyright (c) 2024 The Go Authors. All rights reserved.
 // Modified by kpango.
 
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-
 //    * Redistributions of source code must retain the above copyright
 // notice, this list of conditions and the following disclaimer.
 //    * Redistributions in binary form must reproduce the above
@@ -31,7 +27,8 @@ package gache
 
 import "testing"
 
-func TestAlignUp_Basic(t *testing.T) {
+// TestMap_AlignUp_Basic validates the fundamental alignment math utilized internally to pack struct elements efficiently.
+func TestMap_AlignUp_Basic(t *testing.T) {
 	t.Parallel()
 
 	if got := alignUp(0, 8); got != 0 {
