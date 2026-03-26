@@ -37,6 +37,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/quick"
+	"unsafe"
 
 	gache "github.com/kpango/gache/v2"
 )
@@ -558,4 +559,99 @@ func TestMapLenClearConcurrent(t *testing.T) {
 	if got := m.Len(); got != actual {
 		t.Fatalf("final Len() = %d, Range counted %d", got, actual)
 	}
+}
+
+var testExpunged uint64
+
+func testExpungedPtr[V any]() *V {
+	return (*V)(unsafe.Pointer(&testExpunged))
+}
+
+type MyStruct struct {
+	a, b int64
+}
+
+func TestCheckptr(t *testing.T) {
+	p := testExpungedPtr[MyStruct]()
+	if p == nil {
+		t.Fail()
+	}
+}
+
+func TestCheckptrBig(t *testing.T) {
+	type Big struct {
+		a, b, c, d int64
+	}
+	p := testExpungedPtr[Big]()
+	if p == nil {
+		t.Fail()
+	}
+}
+
+func testMapExpungeGC[V any](t *testing.T, val1, val2 V) {
+	t.Helper()
+
+	var m gache.Map[string, V]
+
+	// 1. Store k1 -> populates dirty map, read.amended = true
+	m.Store("k1", val1)
+
+	// 2. Load k1 -> triggers missLocked(), promotes dirty to read, dirty = nil
+	m.Load("k1")
+
+	// 3. Delete k1 -> sets entry pointer to nil in read map
+	m.Delete("k1")
+
+	// 4. Store k2 -> since dirty is nil and amended is false, calls dirtyLocked().
+	// dirtyLocked iterates over read map, finds k1 is nil, and uses
+	// CompareAndSwap(nil, expungedPtr[V]()) to mark it expunged.
+	m.Store("k2", val2)
+
+	// 5. Force GC to trace the expunged global pointer as various generic types.
+	// If expungedGlobal wasn't safe (e.g., straddling allocations, bad alignment,
+	// or the GC trying to scan inside it as a large struct), this would crash.
+	for range 3 {
+		runtime.GC()
+	}
+
+	// 6. Verify cache state
+	if _, ok := m.Load("k1"); ok {
+		t.Errorf("k1 should be deleted")
+	}
+	if _, ok := m.Load("k2"); !ok {
+		t.Errorf("k2 should exist")
+	}
+}
+
+func TestMapExpungedVariousTypes(t *testing.T) {
+	t.Run("int", func(t *testing.T) { testMapExpungeGC[int](t, 1, 2) })
+	t.Run("string", func(t *testing.T) { testMapExpungeGC[string](t, "a", "b") })
+
+	i1, i2 := 1, 2
+	t.Run("*int", func(t *testing.T) { testMapExpungeGC[*int](t, &i1, &i2) })
+
+	t.Run("[]byte", func(t *testing.T) { testMapExpungeGC[[]byte](t, []byte("a"), []byte("b")) })
+
+	t.Run("map", func(t *testing.T) {
+		testMapExpungeGC[map[string]int](t, map[string]int{"a": 1}, map[string]int{"b": 2})
+	})
+
+	type SmallStruct struct{ a, b int }
+	t.Run("SmallStruct", func(t *testing.T) {
+		testMapExpungeGC[SmallStruct](t, SmallStruct{1, 2}, SmallStruct{3, 4})
+	})
+
+	type BigStruct struct {
+		arr [1000]int64
+		p   *int
+		m   map[string]int
+	}
+	t.Run("BigStruct", func(t *testing.T) {
+		testMapExpungeGC[BigStruct](t, BigStruct{p: &i1}, BigStruct{p: &i2})
+	})
+
+	type ChannelStruct chan bool
+	t.Run("ChannelStruct", func(t *testing.T) {
+		testMapExpungeGC[ChannelStruct](t, make(chan bool), make(chan bool))
+	})
 }

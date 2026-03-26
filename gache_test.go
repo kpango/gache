@@ -1,6 +1,8 @@
 package gache
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -326,7 +328,7 @@ func TestGacheLenConcurrent(t *testing.T) {
 	// Verify Len matches actual count from Range
 	actual := 0
 	for i := range g.shards {
-		g.shards[i].Range(func(k string, v value[int]) bool {
+		g.shards[i].RangePointer(func(k string, v *value[int]) bool {
 			actual++
 			return true
 		})
@@ -434,7 +436,7 @@ func TestGacheLenClearConcurrent(t *testing.T) {
 	// Final check: Len matches actual count after all goroutines have stopped
 	actual := 0
 	for i := range g.shards {
-		g.shards[i].Range(func(k string, v value[int]) bool {
+		g.shards[i].RangePointer(func(k string, v *value[int]) bool {
 			actual++
 			return true
 		})
@@ -519,4 +521,69 @@ func TestDataRace(t *testing.T) {
 	if len(keys) != 1 || keys[0] != "final_key" {
 		t.Fatalf("expected only 'final_key' in keys, got %v", keys)
 	}
+}
+
+func TestReadDoesNotDropExisting(t *testing.T) {
+	gc := New[int]()
+	gc.Set("old_key", 42)
+	gc.Get("old_key1")
+	shard := gc.(*gache[int]).shards[getShardID("old_key", gc.(*gache[int]).maxKeyLength)]
+	shard.Load("nonexistent1")
+	shard.Load("nonexistent2")
+	shard.Load("nonexistent3")
+
+	var buf bytes.Buffer
+	m := map[string]int{"new_key": 99}
+	for i := range 4096 * 2 {
+		m[fmt.Sprintf("k%d", i)] = i
+	}
+	gob.Register(map[string]int{})
+	err := gob.NewEncoder(&buf).Encode(&m)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = gc.Read(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := range 10000 {
+		shard.Load(fmt.Sprintf("miss_%d", i))
+	}
+
+	if val, ok := gc.Get("old_key"); !ok || val != 42 {
+		t.Fatalf("Lost old key! ok=%v, val=%v", ok, val)
+	}
+}
+
+func forceBug(t *testing.T) {
+	gc := New[int]()
+	gc.Set("old_key", 42)
+	shard := gc.(*gache[int]).shards[getShardID("old_key", gc.(*gache[int]).maxKeyLength)]
+	shard.Load("nonexistent1")
+	shard.Load("nonexistent2")
+	shard.Load("nonexistent3")
+
+	shard.InitReserve(10)
+
+	for i := range 10000 {
+		key := fmt.Sprintf("k_%d", i)
+		if getShardID(key, gc.(*gache[int]).maxKeyLength) == getShardID("old_key", gc.(*gache[int]).maxKeyLength) {
+			gc.Set(key, 99)
+			break
+		}
+	}
+
+	for i := range 100 {
+		shard.Load(fmt.Sprintf("miss_%d", i))
+	}
+
+	if val, ok := gc.Get("old_key"); !ok || val != 42 {
+		t.Fatalf("Lost old key! ok=%v, val=%v", ok, val)
+	}
+}
+
+func TestForceBug(t *testing.T) {
+	forceBug(t)
 }

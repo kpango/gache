@@ -77,7 +77,7 @@ func TestGacheMapSize(t *testing.T) {
 	}
 
 	m := make(map[int]*entry[int])
-	m[1] = newEntryPointer(new(1), new(atomic.Int64))
+	m[1] = newEntryPointer(new(int), new(atomic.Int64))
 
 	expectedSize := unsafe.Sizeof(gacheMap.mu) +
 		unsafe.Sizeof(gacheMap.read) +
