@@ -14,12 +14,12 @@
 
 gache is the thinnest cache library for Go applications.
 
-It provides a **generic, type-safe, concurrent-safe in-memory cache** with TTL (time-to-live) support. gache uses a sharded architecture (4096 shards) to minimize lock contention, making it ideal for high-throughput, concurrent workloads. It outperforms `sync.Map`, [go-cache](https://github.com/patrickmn/go-cache), [bigcache](https://github.com/allegro/bigcache), [gcache](https://github.com/bluele/gcache), and [ttlcache](https://github.com/jellydator/ttlcache) in benchmarks while providing a richer feature set.
+It provides a **generic, type-safe, concurrent-safe in-memory cache** with TTL (time-to-live) support. gache uses a sharded architecture (8192 shards) to minimize lock contention, making it ideal for high-throughput, concurrent workloads. It outperforms `sync.Map`, [go-cache](https://github.com/patrickmn/go-cache), [bigcache](https://github.com/allegro/bigcache), [gcache](https://github.com/bluele/gcache), and [ttlcache](https://github.com/jellydator/ttlcache) in benchmarks while providing a richer feature set.
 
 ## Features
 
 - **Go Generics** – Full type safety via `Gache[V any]`; no type assertions required.
-- **High Performance** – Sharded storage with 4096 shards and lock-free reads minimize contention.
+- **High Performance** – Sharded storage with 8192 shards and lock-free reads minimize contention.
 - **TTL / Expiration** – Per-key and default TTL support. Use `gache.NoTTL` for entries that should never expire.
 - **Background Expiration** – Optional daemon (`StartExpired`) periodically removes expired entries.
 - **Expiration Hooks** – Register a callback that fires when entries expire.
