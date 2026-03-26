@@ -1,6 +1,7 @@
 package gache
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -268,61 +269,65 @@ func BenchmarkHeavyMixedInt_gache(b *testing.B) {
 }
 
 func BenchmarkPutInt_gache(b *testing.B) {
-	gc := New[int]().SetDefaultExpire(10 * time.Second)
-	// slen = 512
-	for i := 0; i < b.N; i++ {
+	gc := New[int64]().SetDefaultExpire(10 * time.Second)
+	var i int64
+	for b.Loop() {
 		gc.Set(Int64Key(int64(i)), i+1)
+		i++
 	}
 }
 
 func BenchmarkGetInt_gache(b *testing.B) {
 	gc := New[string]().SetDefaultExpire(10 * time.Second)
-	// slen = 512
 	gc.Set("0", "0")
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		gc.Get("0")
 	}
 }
 
 func BenchmarkPut1K_gache(b *testing.B) {
 	gc := New[[]byte]().SetDefaultExpire(10 * time.Second)
-	// slen = 512
-	for i := 0; i < b.N; i++ {
+	var i int64
+	for b.Loop() {
 		gc.Set(Int64Key(int64(i)), Data1K)
+		i++
 	}
 }
 
 func BenchmarkPut1M_gache(b *testing.B) {
 	gc := New[[]byte]().SetDefaultExpire(10 * time.Second)
-	// slen = 512
-	for i := 0; i < b.N; i++ {
+	var i int64
+	for b.Loop() {
 		gc.Set(Int64Key(int64(i)), Data1M)
+		i++
 	}
 }
 
 func BenchmarkPutTinyObject_gache(b *testing.B) {
 	gc := New[dummyData]().SetDefaultExpire(10 * time.Second)
-	// slen = 512
-	for i := 0; i < b.N; i++ {
+	var i int64
+	for b.Loop() {
 		gc.Set(Int64Key(int64(i)), dummyData{})
+		i++
 	}
 }
 
 func BenchmarkChangeOutAllInt_gache(b *testing.B) {
-	gc := New[int]().SetDefaultExpire(10 * time.Second)
-	// slen = 512
-	for i := 0; i < b.N*1024; i++ {
+	gc := New[int64]().SetDefaultExpire(10 * time.Second)
+	var i int64
+	for b.Loop() {
 		gc.Set(Int64Key(int64(i)), i+1)
+		i++
 	}
 }
 
 func BenchmarkHeavyReadInt_gache(b *testing.B) {
-	gc := New[int]().SetDefaultExpire(10 * time.Second)
+	gc := New[int64]().SetDefaultExpire(10 * time.Second)
 	GCPause()
 
 	// slen = 512
-	for i := range 1024 {
-		gc.Set(Int64Key(int64(i)), i+1)
+	for i := range int64(1024) {
+		gc.Set(Int64Key(i), i+1)
 	}
 	var wg sync.WaitGroup
 	for range 10000 {
@@ -471,7 +476,7 @@ type dummyData struct {
 func BenchmarkDeleteExpired(b *testing.B) {
 	const numKeys = 10000
 	ctx := context.Background()
-	g := New[string](
+	g := New(
 		WithDefaultExpiration[string](1 * time.Nanosecond),
 	)
 	// Pre-fill with keys that will expire immediately.
@@ -480,7 +485,7 @@ func BenchmarkDeleteExpired(b *testing.B) {
 	}
 	b.ResetTimer()
 	b.ReportAllocs()
-	for range b.N {
+	for b.Loop() {
 		g.DeleteExpired(ctx)
 		// Refill so next iteration has something to delete.
 		for i := range numKeys {
@@ -493,7 +498,7 @@ func BenchmarkDeleteExpired(b *testing.B) {
 func BenchmarkRange(b *testing.B) {
 	const numKeys = 10000
 	ctx := context.Background()
-	g := New[string](
+	g := New(
 		WithDefaultExpiration[string](NoTTL),
 	)
 	for i := range numKeys {
@@ -501,43 +506,46 @@ func BenchmarkRange(b *testing.B) {
 	}
 	b.ResetTimer()
 	b.ReportAllocs()
-	for range b.N {
+	for b.Loop() {
 		g.Range(ctx, func(_ string, _ string, _ int64) bool { return true })
 	}
 }
 
 func BenchmarkKeys(b *testing.B) {
+	b.ReportAllocs()
 	ctx := context.Background()
 	g := New[int]()
 	for i := range 100000 {
 		g.Set(strconv.Itoa(i), i)
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = g.Keys(ctx)
 	}
 }
 
 func BenchmarkValues(b *testing.B) {
+	b.ReportAllocs()
 	ctx := context.Background()
 	g := New[int]()
 	for i := range 100000 {
 		g.Set(strconv.Itoa(i), i)
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = g.Values(ctx)
 	}
 }
 
 func BenchmarkToRawMap(b *testing.B) {
+	b.ReportAllocs()
 	ctx := context.Background()
 	g := New[int]()
 	for i := range 100000 {
 		g.Set(strconv.Itoa(i), i)
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = g.ToRawMap(ctx)
 	}
 }
@@ -555,10 +563,45 @@ func BenchmarkLoop(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				g.loop(ctx, func(k string, v *value[string]) bool {
+				g.loop(ctx, func(shardID int, k string, v *value[string]) bool {
 					return true
 				})
 			}
 		})
+	}
+}
+
+func BenchmarkRead(b *testing.B) {
+	gc := New[int]()
+	for i := range 10000000 {
+		gc.Set(fmt.Sprintf("key-%d", i), i)
+	}
+
+	var buf bytes.Buffer
+	err := gc.Write(context.Background(), &buf)
+	if err != nil {
+		b.Fatal(err)
+	}
+	gc.Stop()
+	data := buf.Bytes()
+
+	b.ResetTimer()
+	for b.Loop() {
+		err := New[int]().Read(bytes.NewReader(data))
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkToMap(b *testing.B) {
+	b.ReportAllocs()
+	gc := New[int]()
+	for i := range 100000 {
+		gc.Set(fmt.Sprintf("key-%d", i), i)
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		_ = gc.ToMap(context.Background())
 	}
 }

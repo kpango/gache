@@ -49,3 +49,13 @@ func WithMaxKeyLength[V any](kl uint64) Option[V] {
 		return nil
 	}
 }
+
+// WithMaxWorkers sets the maximum number of concurrent workers used for
+// parallel operations (like Keys, Values, ToRawMap). A value <= 0 disables
+// concurrency for these methods. The default is runtime.NumCPU() * 2.
+func WithMaxWorkers[V any](workers int) Option[V] {
+	return func(g *gache[V]) error {
+		g.maxWorkers = workers
+		return nil
+	}
+}
