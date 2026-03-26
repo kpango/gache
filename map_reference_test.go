@@ -1,10 +1,6 @@
 // Copyright (c) 2009 The Go Authors. All rights resered.
 // Modified <Yusuke Kato (kpango)>
 
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-
 //    * Redistributions of source code must retain the above copyright
 // notice, this list of conditions and the following disclaimer.
 //    * Redistributions in binary form must reproduce the above
@@ -51,7 +47,6 @@ var (
 	_ mapInterface = &DeepCopyMap{}
 )
 
-// RWMutexMap is an implementation of mapInterface using a sync.RWMutex.
 type RWMutexMap struct {
 	dirty map[any]any
 	mu    sync.RWMutex
@@ -166,9 +161,6 @@ func (m *RWMutexMap) Range(f func(key, value any) (shouldContinue bool)) {
 	}
 }
 
-// DeepCopyMap is an implementation of mapInterface using a Mutex and
-// atomic.Value.  It makes deep copies of the map on every write to avoid
-// acquiring the Mutex in Load.
 type DeepCopyMap struct {
 	clean atomic.Value
 	mu    sync.Mutex

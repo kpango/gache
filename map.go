@@ -30,11 +30,18 @@
 package gache
 
 import (
+	"unsafe"
+
 	"reflect"
 	"sync"
 	"sync/atomic"
-	"unsafe"
 )
+
+var expungedGlobal atomic.Int64
+
+func expungedPtr[V any]() *V {
+	return (*V)(unsafe.Pointer(&expungedGlobal))
+}
 
 type Map[K comparable, V any] struct {
 	read   atomic.Pointer[readOnly[K, V]]
@@ -50,21 +57,19 @@ type readOnly[K comparable, V any] struct {
 }
 
 type entry[V any] struct {
-	expunged atomic.Pointer[V]
-	p        atomic.Pointer[V]
-	c        *atomic.Int64
+	p atomic.Pointer[V]
+	c *atomic.Int64
 }
 
 func newEntryPointer[V any](v *V, c *atomic.Int64) (e *entry[V]) {
 	e = &entry[V]{}
-	e.expunged.Store(new(V))
 	e.p.Store(v)
 	e.c = c
 	return e
 }
 
 func (e *entry[V]) isExpunged(p *V) bool {
-	return p == e.expunged.Load()
+	return p == expungedPtr[V]()
 }
 
 func (m *Map[K, V]) counter() *atomic.Int64 {
@@ -184,7 +189,7 @@ func (m *Map[K, V]) Clear() {
 }
 
 func (e *entry[V]) unexpungeLocked() (wasExpunged bool) {
-	return e.p.CompareAndSwap(e.expunged.Load(), nil)
+	return e.p.CompareAndSwap(expungedPtr[V](), nil)
 }
 
 func (e *entry[V]) swapLocked(i *V) (v *V) {
@@ -544,7 +549,7 @@ func (m *Map[K, V]) initDirty(size int) {
 func (e *entry[V]) tryExpungeLocked() (isExpunged bool) {
 	p := e.p.Load()
 	for p == nil {
-		if e.p.CompareAndSwap(nil, e.expunged.Load()) {
+		if e.p.CompareAndSwap(nil, expungedPtr[V]()) {
 			return true
 		}
 		p = e.p.Load()
@@ -602,4 +607,12 @@ func (r readOnly[K, V]) Size() (size uintptr) {
 		size += uintptr(l) * (unsafe.Sizeof(entry[V]{}) + unsafe.Sizeof(*new(V)))
 	}
 	return size
+}
+
+func (m *Map[K, V]) InitReserve(size int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.dirty == nil && len(m.loadReadOnly().m) == 0 {
+		m.initDirty(size)
+	}
 }
