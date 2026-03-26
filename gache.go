@@ -641,6 +641,9 @@ func (g *gache[V]) numWorkers() int {
 
 func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool) (expiredRows uint64) {
 	nprocs := g.numWorkers()
+	if slenInt := int(slen); nprocs > slenInt {
+		nprocs = slenInt
+	}
 	var fn func(workerID int, k string, v *value[V]) bool
 	if f != nil {
 		fn = func(workerID int, k string, v *value[V]) bool {
