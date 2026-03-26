@@ -768,8 +768,9 @@ func (g *gache[V]) Write(ctx context.Context, w io.Writer) error {
 }
 
 // Read deserialises cache entries from r (previously written by [Gache.Write])
-// and stores them in the cache using the current default expiration. Each entry
-// is inserted asynchronously via a goroutine.
+// and stores them in the cache using the current default expiration. Entries
+// are inserted in parallel using worker goroutines, but Read blocks until all
+// insertions are complete before returning.
 //
 // Example:
 //
