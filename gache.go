@@ -27,7 +27,6 @@ import (
 	"unsafe"
 
 	"github.com/kpango/fastime"
-	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -174,10 +173,7 @@ func getShardID(key string, kl uint64) (id uint64) {
 	if lk == 1 {
 		return uint64(key[0]) & mask
 	}
-	if lk <= 32 {
-		return maphash.String(hashSeed, key) & mask
-	}
-	return xxh3.HashString(key) & mask
+	return maphash.String(hashSeed, key) & mask
 }
 
 // isValid checks expiration of value.
