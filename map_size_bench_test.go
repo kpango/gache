@@ -2,7 +2,6 @@ package gache
 
 import (
 	"fmt"
-	"sync/atomic"
 	"testing"
 	"unsafe"
 )
@@ -97,9 +96,6 @@ func TestMap_SizeCorrectness(t *testing.T) {
 
 	var expectedSize uintptr
 	expectedSize = unsafe.Sizeof(*m)
-	if m.l.Load() != nil {
-		expectedSize += unsafe.Sizeof(atomic.Int64{})
-	}
 	if ro := m.read.Load(); ro != nil {
 		expectedSize += unsafe.Sizeof(ro.amended)
 		expectedSize += mapSize(ro.m)
@@ -135,9 +131,6 @@ func TestMap_SizeStructCorrectness(t *testing.T) {
 
 	var expectedSize uintptr
 	expectedSize = unsafe.Sizeof(*m)
-	if m.l.Load() != nil {
-		expectedSize += unsafe.Sizeof(atomic.Int64{})
-	}
 	if ro := m.read.Load(); ro != nil {
 		expectedSize += unsafe.Sizeof(ro.amended)
 		expectedSize += mapSize(ro.m)
