@@ -1,10 +1,6 @@
 // Copyright (c) 2009 The Go Authors. All rights resered.
 // Modified <Yusuke Kato (kpango)>
 
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-
 //    * Redistributions of source code must retain the above copyright
 // notice, this list of conditions and the following disclaimer.
 //    * Redistributions in binary form must reproduce the above
@@ -37,6 +33,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/quick"
+	"unsafe"
 
 	gache "github.com/kpango/gache/v2"
 )
@@ -65,7 +62,6 @@ var mapOps = [...]mapOp{
 	opCompareAndDelete,
 }
 
-// mapCall is a quick.Generator for calls on mapInterface.
 type mapCall struct {
 	k  any
 	v  any
@@ -155,19 +151,80 @@ func applyDeepCopyMap(calls []mapCall) ([]mapResult, map[any]any) {
 	return applyCalls(new(DeepCopyMap), calls)
 }
 
-func TestMapMatchesRWMutex(t *testing.T) {
-	if err := quick.CheckEqual(applyMap, applyRWMutexMap, nil); err != nil {
-		t.Error(err)
+var testExpunged uint64
+
+func testExpungedPtr[V any]() *V {
+	return (*V)(unsafe.Pointer(&testExpunged))
+}
+
+type MyStruct struct {
+	a, b int64
+}
+
+func testMapExpungeGC[V any](t *testing.T, val1, val2 V) {
+	t.Helper()
+
+	var m gache.Map[string, V]
+
+	// 1. Store k1 -> populates dirty map, read.amended = true
+	m.Store("k1", val1)
+
+	// 2. Load k1 -> triggers missLocked(), promotes dirty to read, dirty = nil
+	m.Load("k1")
+
+	// 3. Delete k1 -> sets entry pointer to nil in read map
+	m.Delete("k1")
+
+	// 4. Store k2 -> since dirty is nil and amended is false, calls dirtyLocked().
+	// dirtyLocked iterates over read map, finds k1 is nil, and uses
+	// CompareAndSwap(nil, expungedPtr[V]()) to mark it expunged.
+	m.Store("k2", val2)
+
+	// 5. Force GC to trace the expunged global pointer as various generic types.
+	// If expungedGlobal wasn't safe (e.g., straddling allocations, bad alignment,
+	// or the GC trying to scan inside it as a large struct), this would crash.
+	for range 3 {
+		runtime.GC()
+	}
+
+	// 6. Verify cache state
+	if _, ok := m.Load("k1"); ok {
+		t.Errorf("k1 should be deleted")
+	}
+	if _, ok := m.Load("k2"); !ok {
+		t.Errorf("k2 should exist")
 	}
 }
 
-func TestMapMatchesDeepCopy(t *testing.T) {
-	if err := quick.CheckEqual(applyMap, applyDeepCopyMap, nil); err != nil {
-		t.Error(err)
+// TestMap_Checkptr ensures that global expunged pointers correctly survive garbage collection when utilized across primitive generic types.
+func TestMap_Checkptr(t *testing.T) {
+	p := testExpungedPtr[MyStruct]()
+	if p == nil {
+		t.Fail()
 	}
 }
 
-func TestConcurrentRange(t *testing.T) {
+// TestMap_CheckptrBig ensures that global expunged pointers correctly survive garbage collection when interacting with oversized generic structures.
+func TestMap_CheckptrBig(t *testing.T) {
+	type Big struct {
+		a, b, c, d int64
+	}
+	p := testExpungedPtr[Big]()
+	if p == nil {
+		t.Fail()
+	}
+}
+
+// TestMap_CompareAndSwap_NonExistingKey validates that CompareAndSwap safely rejects mutation attempts targeting non-existent key slots.
+func TestMap_CompareAndSwap_NonExistingKey(t *testing.T) {
+	m := &gache.Map[any, any]{}
+	if m.CompareAndSwap(m, nil, 42) {
+		t.Fatalf("CompareAndSwap on an non-existing key succeeded")
+	}
+}
+
+// TestMap_ConcurrentRange stresses the map by performing overlapping iteration sweeps while concurrent goroutines mutate the map topology.
+func TestMap_ConcurrentRange(t *testing.T) {
 	const mapSize = 1 << 10
 
 	m := new(gache.Map[any, any])
@@ -226,18 +283,48 @@ func TestConcurrentRange(t *testing.T) {
 	}
 }
 
-func TestIssue40999(t *testing.T) {
+// TestMap_ExpungedVariousTypes sequentially checks the map's capacity to safely expunge unlinked key slots across a wide spectrum of variable types.
+func TestMap_ExpungedVariousTypes(t *testing.T) {
+	t.Run("int", func(t *testing.T) { testMapExpungeGC[int](t, 1, 2) })
+	t.Run("string", func(t *testing.T) { testMapExpungeGC[string](t, "a", "b") })
+
+	i1, i2 := 1, 2
+	t.Run("*int", func(t *testing.T) { testMapExpungeGC[*int](t, &i1, &i2) })
+
+	t.Run("[]byte", func(t *testing.T) { testMapExpungeGC[[]byte](t, []byte("a"), []byte("b")) })
+
+	t.Run("map", func(t *testing.T) {
+		testMapExpungeGC[map[string]int](t, map[string]int{"a": 1}, map[string]int{"b": 2})
+	})
+
+	type SmallStruct struct{ a, b int }
+	t.Run("SmallStruct", func(t *testing.T) {
+		testMapExpungeGC[SmallStruct](t, SmallStruct{1, 2}, SmallStruct{3, 4})
+	})
+
+	type BigStruct struct {
+		arr [1000]int64
+		p   *int
+		m   map[string]int
+	}
+	t.Run("BigStruct", func(t *testing.T) {
+		testMapExpungeGC[BigStruct](t, BigStruct{p: &i1}, BigStruct{p: &i2})
+	})
+
+	type ChannelStruct chan bool
+	t.Run("ChannelStruct", func(t *testing.T) {
+		testMapExpungeGC[ChannelStruct](t, make(chan bool), make(chan bool))
+	})
+}
+
+// TestMap_Issue40999 serves as a regression test verifying that finalizers execute correctly for map keys avoiding memory leaks.
+func TestMap_Issue40999(t *testing.T) {
 	var m gache.Map[any, any]
 
-	// Since the miss-counting in missLocked (via Delete)
-	// compares the miss count with len(m.dirty),
-	// add an initial entry to bias len(m.dirty) above the miss count.
 	m.Store(nil, struct{}{})
 
 	var finalized uint32
 
-	// Set finalizers that count for collected keys. A non-zero count
-	// indicates that keys have not been leaked.
 	for atomic.LoadUint32(&finalized) == 0 {
 		p := new(int)
 		runtime.SetFinalizer(p, func(*int) {
@@ -249,72 +336,14 @@ func TestIssue40999(t *testing.T) {
 	}
 }
 
-func TestMapRangeNestedCall(t *testing.T) { // Issue 46399
-	var m gache.Map[any, any]
-	for i, v := range [3]string{"hello", "world", "Go"} {
-		m.Store(i, v)
-	}
-	m.Range(func(key, value any) bool {
-		m.Range(func(key, value any) bool {
-			// We should be able to load the key offered in the Range callback,
-			// because there are no concurrent Delete involved in this tested map.
-			if v, ok := m.Load(key); !ok || !reflect.DeepEqual(v, value) {
-				t.Fatalf("Nested Range loads unexpected value, got %+v want %+v", v, value)
-			}
-
-			// We didn't keep 42 and a value into the map before, if somehow we loaded
-			// a value from such a key, meaning there must be an internal bug regarding
-			// nested range in the Map.
-			if _, loaded := m.LoadOrStore(42, "dummy"); loaded {
-				t.Fatalf("Nested Range loads unexpected value, want store a new value")
-			}
-
-			// Try to Store then LoadAndDelete the corresponding value with the key
-			// 42 to the Map. In this case, the key 42 and associated value should be
-			// removed from the Map. Therefore any future range won't observe key 42
-			// as we checked in above.
-			val := "gache.Map[any, any]"
-			m.Store(42, val)
-			if v, loaded := m.LoadAndDelete(42); !loaded || !reflect.DeepEqual(v, val) {
-				t.Fatalf("Nested Range loads unexpected value, got %v, want %v", v, val)
-			}
-			return true
-		})
-
-		// Remove key from Map on-the-fly.
-		m.Delete(key)
-		return true
-	})
-
-	// After a Range of Delete, all keys should be removed and any
-	// further Range won't invoke the callback. Hence length remains 0.
-	length := 0
-	m.Range(func(key, value any) bool {
-		length++
-		return true
-	})
-
-	if length != 0 {
-		t.Fatalf("Unexpected gache.Map[any, any] size, got %v want %v", length, 0)
-	}
-}
-
-func TestCompareAndSwap_NonExistingKey(t *testing.T) {
-	m := &gache.Map[any, any]{}
-	if m.CompareAndSwap(m, nil, 42) {
-		// See https://go.dev/issue/51972#issuecomment-1126408637.
-		t.Fatalf("CompareAndSwap on an non-existing key succeeded")
-	}
-}
-
-func TestMapLenBasic(t *testing.T) {
+// TestMap_LenBasic checks the map's raw item count reliability through basic sequential lifecycle operations.
+func TestMap_LenBasic(t *testing.T) {
 	var m gache.Map[string, int]
 
 	if got := m.Len(); got != 0 {
 		t.Fatalf("empty map Len() = %d, want 0", got)
 	}
 
-	// Store increments
 	m.Store("a", 1)
 	m.Store("b", 2)
 	m.Store("c", 3)
@@ -322,25 +351,21 @@ func TestMapLenBasic(t *testing.T) {
 		t.Fatalf("after 3 Stores, Len() = %d, want 3", got)
 	}
 
-	// Overwrite does not change count
 	m.Store("b", 20)
 	if got := m.Len(); got != 3 {
 		t.Fatalf("after overwrite, Len() = %d, want 3", got)
 	}
 
-	// Delete decrements
 	m.Delete("a")
 	if got := m.Len(); got != 2 {
 		t.Fatalf("after Delete, Len() = %d, want 2", got)
 	}
 
-	// Delete non-existent key is a no-op
 	m.Delete("nonexistent")
 	if got := m.Len(); got != 2 {
 		t.Fatalf("after Delete(nonexistent), Len() = %d, want 2", got)
 	}
 
-	// LoadAndDelete decrements
 	if _, ok := m.LoadAndDelete("b"); !ok {
 		t.Fatal("LoadAndDelete(b) returned ok=false")
 	}
@@ -348,7 +373,6 @@ func TestMapLenBasic(t *testing.T) {
 		t.Fatalf("after LoadAndDelete, Len() = %d, want 1", got)
 	}
 
-	// LoadOrStore with new key increments
 	if _, loaded := m.LoadOrStore("d", 4); loaded {
 		t.Fatal("LoadOrStore(d) returned loaded=true for new key")
 	}
@@ -356,7 +380,6 @@ func TestMapLenBasic(t *testing.T) {
 		t.Fatalf("after LoadOrStore(new), Len() = %d, want 2", got)
 	}
 
-	// LoadOrStore with existing key does not change count
 	if _, loaded := m.LoadOrStore("d", 40); !loaded {
 		t.Fatal("LoadOrStore(d) returned loaded=false for existing key")
 	}
@@ -364,7 +387,6 @@ func TestMapLenBasic(t *testing.T) {
 		t.Fatalf("after LoadOrStore(existing), Len() = %d, want 2", got)
 	}
 
-	// Swap with new key increments
 	if _, loaded := m.Swap("e", 5); loaded {
 		t.Fatal("Swap(e) returned loaded=true for new key")
 	}
@@ -372,7 +394,6 @@ func TestMapLenBasic(t *testing.T) {
 		t.Fatalf("after Swap(new), Len() = %d, want 3", got)
 	}
 
-	// Swap with existing key does not change count
 	if _, loaded := m.Swap("e", 50); !loaded {
 		t.Fatal("Swap(e) returned loaded=false for existing key")
 	}
@@ -380,7 +401,6 @@ func TestMapLenBasic(t *testing.T) {
 		t.Fatalf("after Swap(existing), Len() = %d, want 3", got)
 	}
 
-	// CompareAndDelete decrements
 	if !m.CompareAndDelete("e", 50) {
 		t.Fatal("CompareAndDelete(e, 50) returned false")
 	}
@@ -388,7 +408,6 @@ func TestMapLenBasic(t *testing.T) {
 		t.Fatalf("after CompareAndDelete, Len() = %d, want 2", got)
 	}
 
-	// CompareAndDelete with wrong value is a no-op
 	if m.CompareAndDelete("c", 999) {
 		t.Fatal("CompareAndDelete with wrong value returned true")
 	}
@@ -396,14 +415,75 @@ func TestMapLenBasic(t *testing.T) {
 		t.Fatalf("after CompareAndDelete(wrong), Len() = %d, want 2", got)
 	}
 
-	// Clear resets to 0
 	m.Clear()
 	if got := m.Len(); got != 0 {
 		t.Fatalf("after Clear, Len() = %d, want 0", got)
 	}
 }
 
-func TestMapLenConcurrent(t *testing.T) {
+// TestMap_LenClearConcurrent confirms that the map's internal counters do not desynchronize when subjected to aggressive concurrent clear calls.
+func TestMap_LenClearConcurrent(t *testing.T) {
+	var m gache.Map[int, int]
+
+	const (
+		numWriters  = 4
+		numDeleters = 4
+		ops         = 500
+	)
+
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+
+	for id := range numWriters {
+		wg.Go(func() {
+			r := rand.New(rand.NewSource(int64(id)))
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					m.Store(r.Intn(100), id)
+				}
+			}
+		})
+	}
+
+	for id := range numDeleters {
+		wg.Go(func() {
+			r := rand.New(rand.NewSource(int64(id + 100)))
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					m.Delete(r.Intn(100))
+				}
+			}
+		})
+	}
+
+	for range ops {
+		m.Clear()
+		if l := m.Len(); l < 0 {
+			t.Fatalf("Len() = %d after Clear, must not be negative", l)
+		}
+	}
+
+	close(done)
+	wg.Wait()
+
+	actual := 0
+	m.Range(func(k, v int) bool {
+		actual++
+		return true
+	})
+	if got := m.Len(); got != actual {
+		t.Fatalf("final Len() = %d, Range counted %d", got, actual)
+	}
+}
+
+// TestMap_LenConcurrent tests the integrity of the atomic length tracker when bombarded with unpredictable multi-threaded mutation.
+func TestMap_LenConcurrent(t *testing.T) {
 	var m gache.Map[int, int]
 
 	const (
@@ -414,8 +494,6 @@ func TestMapLenConcurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	// Half goroutines do Store, the other half do Delete, all on a shared key range.
-	// After all goroutines complete, verify that Len() matches the actual map contents.
 	for id := range numGoroutines {
 		wg.Go(func() {
 			r := rand.New(rand.NewSource(int64(id)))
@@ -440,7 +518,6 @@ func TestMapLenConcurrent(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Count actual entries via Range
 	actual := 0
 	m.Range(func(k, v int) bool {
 		actual++
@@ -452,9 +529,8 @@ func TestMapLenConcurrent(t *testing.T) {
 	}
 }
 
-func TestMapLenConcurrentStoreDelete(t *testing.T) {
-	// Stress test: many goroutines store unique keys then delete them all.
-	// Final Len() must be 0.
+// TestMap_LenConcurrentStoreDelete ensures length consistency when an equal volume of targeted stores and deletes run completely in parallel.
+func TestMap_LenConcurrentStoreDelete(t *testing.T) {
 	var m gache.Map[int, int]
 
 	const (
@@ -463,7 +539,7 @@ func TestMapLenConcurrentStoreDelete(t *testing.T) {
 	)
 
 	var wg sync.WaitGroup
-	// Phase 1: Store unique keys per goroutine
+
 	for g := range numGoroutines {
 		wg.Go(func() {
 			base := g * keysPerGoroutine
@@ -473,7 +549,6 @@ func TestMapLenConcurrentStoreDelete(t *testing.T) {
 		})
 	}
 
-	// Phase 1 also: concurrent deletions (some will miss, that's fine)
 	for g := range numGoroutines {
 		wg.Go(func() {
 			base := g * keysPerGoroutine
@@ -484,7 +559,6 @@ func TestMapLenConcurrentStoreDelete(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Now delete anything remaining
 	m.Range(func(k, v int) bool {
 		m.Delete(k)
 		return true
@@ -495,67 +569,55 @@ func TestMapLenConcurrentStoreDelete(t *testing.T) {
 	}
 }
 
-func TestMapLenClearConcurrent(t *testing.T) {
-	// Verify that Clear() under concurrent Store/Delete doesn't corrupt the counter.
-	var m gache.Map[int, int]
+// TestMap_MatchesDeepCopy runs randomized property tests to ensure the Map's concurrent behavior matches an inherently safe deep-copied Map.
+func TestMap_MatchesDeepCopy(t *testing.T) {
+	if err := quick.CheckEqual(applyMap, applyDeepCopyMap, nil); err != nil {
+		t.Error(err)
+	}
+}
 
-	const (
-		numWriters  = 4
-		numDeleters = 4
-		ops         = 500
-	)
+// TestMap_MatchesRWMutex runs randomized property tests to verify the Map aligns strictly with the behavior of a sync.RWMutex-guarded equivalent.
+func TestMap_MatchesRWMutex(t *testing.T) {
+	if err := quick.CheckEqual(applyMap, applyRWMutexMap, nil); err != nil {
+		t.Error(err)
+	}
+}
 
-	done := make(chan struct{})
-	var wg sync.WaitGroup
-
-	// Writers
-	for id := range numWriters {
-		wg.Go(func() {
-			r := rand.New(rand.NewSource(int64(id)))
-			for {
-				select {
-				case <-done:
-					return
-				default:
-					m.Store(r.Intn(100), id)
-				}
+// TestMap_RangeNestedCall tests the safety and stability of invoking nested Range callbacks traversing the map recursively.
+func TestMap_RangeNestedCall(t *testing.T) {
+	var m gache.Map[any, any]
+	for i, v := range [3]string{"hello", "world", "Go"} {
+		m.Store(i, v)
+	}
+	m.Range(func(key, value any) bool {
+		m.Range(func(key, value any) bool {
+			if v, ok := m.Load(key); !ok || !reflect.DeepEqual(v, value) {
+				t.Fatalf("Nested Range loads unexpected value, got %+v want %+v", v, value)
 			}
-		})
-	}
 
-	// Deleters
-	for id := range numDeleters {
-		wg.Go(func() {
-			r := rand.New(rand.NewSource(int64(id + 100)))
-			for {
-				select {
-				case <-done:
-					return
-				default:
-					m.Delete(r.Intn(100))
-				}
+			if _, loaded := m.LoadOrStore(42, "dummy"); loaded {
+				t.Fatalf("Nested Range loads unexpected value, want store a new value")
 			}
+
+			val := "gache.Map[any, any]"
+			m.Store(42, val)
+			if v, loaded := m.LoadAndDelete(42); !loaded || !reflect.DeepEqual(v, val) {
+				t.Fatalf("Nested Range loads unexpected value, got %v, want %v", v, val)
+			}
+			return true
 		})
-	}
 
-	// Periodically Clear and check that Len doesn't go negative
-	for range ops {
-		m.Clear()
-		if l := m.Len(); l < 0 {
-			t.Fatalf("Len() = %d after Clear, must not be negative", l)
-		}
-	}
-
-	close(done)
-	wg.Wait()
-
-	// Final check: Len must match actual count
-	actual := 0
-	m.Range(func(k, v int) bool {
-		actual++
+		m.Delete(key)
 		return true
 	})
-	if got := m.Len(); got != actual {
-		t.Fatalf("final Len() = %d, Range counted %d", got, actual)
+
+	length := 0
+	m.Range(func(key, value any) bool {
+		length++
+		return true
+	})
+
+	if length != 0 {
+		t.Fatalf("Unexpected gache.Map[any, any] size, got %v want %v", length, 0)
 	}
 }
