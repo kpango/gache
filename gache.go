@@ -81,6 +81,7 @@ type (
 		expire         int64
 		maxKeyLength   uint64
 		maxWorkers     int
+		gobOnce        sync.Once
 	}
 
 	value[V any] struct {
@@ -763,7 +764,7 @@ func (g *gache[V]) Size() (size uintptr) {
 //	}
 func (g *gache[V]) Write(ctx context.Context, w io.Writer) error {
 	m := g.ToRawMap(ctx)
-	gob.Register(map[string]V{})
+	g.gobOnce.Do(func() { gob.Register(map[string]V{}) })
 	return gob.NewEncoder(w).Encode(&m)
 }
 
@@ -783,7 +784,7 @@ func (g *gache[V]) Write(ctx context.Context, w io.Writer) error {
 //	}
 func (g *gache[V]) Read(r io.Reader) error {
 	var m map[string]V
-	gob.Register(map[string]V{})
+	g.gobOnce.Do(func() { gob.Register(map[string]V{}) })
 	err := gob.NewDecoder(r).Decode(&m)
 	if err != nil {
 		return err
