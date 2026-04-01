@@ -638,11 +638,17 @@ func (g *gache[V]) numWorkers() int {
 	return nprocs
 }
 
+type workerCounter struct {
+	val uint64
+	_   [56]byte
+}
+
 func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool) (expiredRows uint64) {
 	nprocs := g.numWorkers()
 	if slenInt := int(slen); nprocs > slenInt {
 		nprocs = slenInt
 	}
+	counters := make([]workerCounter, nprocs)
 	var fn func(workerID int, k string, v *value[V]) bool
 	if f != nil {
 		fn = func(workerID int, k string, v *value[V]) bool {
@@ -653,7 +659,7 @@ func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool
 				}
 				if !valid {
 					g.expiration(k)
-					atomic.AddUint64(&expiredRows, 1)
+					counters[workerID].val++
 				} else {
 					return f(workerID, k, v)
 				}
@@ -661,12 +667,12 @@ func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool
 			return true
 		}
 	} else {
-		fn = func(_ int, k string, v *value[V]) bool {
+		fn = func(workerID int, k string, v *value[V]) bool {
 			if v != nil {
 				valid, match := v.isValid(k)
 				if match && !valid {
 					g.expiration(k)
-					atomic.AddUint64(&expiredRows, 1)
+					counters[workerID].val++
 				}
 			}
 			return true
@@ -680,7 +686,7 @@ func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool
 			}
 			g.shards[i].RangePointer(func(k string, v *value[V]) bool { return fn(0, k, v) })
 		}
-		return atomic.LoadUint64(&expiredRows)
+		return counters[0].val
 	}
 
 	var idx atomic.Uint64
@@ -708,7 +714,10 @@ func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool
 	}
 	worker(nprocs - 1)
 	wg.Wait()
-	return atomic.LoadUint64(&expiredRows)
+	for i := range nprocs {
+		expiredRows += counters[i].val
+	}
+	return expiredRows
 }
 
 // Len returns the total number of entries (including possibly expired but not
