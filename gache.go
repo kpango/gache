@@ -651,10 +651,15 @@ func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool
 		nprocs = slenInt
 	}
 	counters := make([]workerCounter, nprocs)
-	var fn func(workerID int, k string, v *value[V]) bool
-	if f != nil {
-		fn = func(workerID int, k string, v *value[V]) bool {
-			if v != nil {
+
+	// makeVisitor builds a per-worker RangePointer callback with workerID
+	// captured in the closure, eliminating the shared-fn wrapper indirection.
+	makeVisitor := func(workerID int) func(k string, v *value[V]) bool {
+		if f != nil {
+			return func(k string, v *value[V]) bool {
+				if v == nil {
+					return true
+				}
 				valid, match := v.isValid(k)
 				if !match {
 					return true
@@ -662,51 +667,52 @@ func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool
 				if !valid {
 					g.expiration(k)
 					counters[workerID].val++
-				} else {
-					return f(workerID, k, v)
+					return true
 				}
+				return f(workerID, k, v)
 			}
-			return true
 		}
-	} else {
-		fn = func(workerID int, k string, v *value[V]) bool {
-			if v != nil {
-				valid, match := v.isValid(k)
-				if match && !valid {
-					g.expiration(k)
-					counters[workerID].val++
-				}
+		return func(k string, v *value[V]) bool {
+			if v == nil {
+				return true
+			}
+			valid, match := v.isValid(k)
+			if match && !valid {
+				g.expiration(k)
+				counters[workerID].val++
 			}
 			return true
 		}
 	}
 
 	if nprocs <= 1 {
+		visit := makeVisitor(0)
 		for i := range slen {
-			if ctx.Err() != nil {
+			if i&63 == 0 && ctx.Err() != nil {
 				break
 			}
-			g.shards[i].RangePointer(func(k string, v *value[V]) bool { return fn(0, k, v) })
+			g.shards[i].RangePointer(visit)
 		}
 		return counters[0].val
 	}
 
-	var idx atomic.Uint64
+	// Partition shards statically among workers — each worker owns an exclusive
+	// contiguous range, eliminating the shared atomic work-stealing index.
+	chunkSize := (int(slen) + nprocs - 1) / nprocs
 	var wg sync.WaitGroup
 	worker := func(workerID int) {
-		for {
-			endIdx := idx.Add(16)
-			startIdx := endIdx - 16
-			if startIdx >= slen || ctx.Err() != nil {
-				wg.Done()
+		defer wg.Done()
+		start := workerID * chunkSize
+		if start >= int(slen) {
+			return
+		}
+		visit := makeVisitor(workerID)
+		end := min(start+chunkSize, int(slen))
+		for j := start; j < end; j++ {
+			if j&63 == 0 && ctx.Err() != nil {
 				return
 			}
-			if endIdx > slen {
-				endIdx = slen
-			}
-			for j := startIdx; j < endIdx; j++ {
-				g.shards[j].RangePointer(func(k string, v *value[V]) bool { return fn(workerID, k, v) })
-			}
+			g.shards[j].RangePointer(visit)
 		}
 	}
 
