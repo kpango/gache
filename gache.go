@@ -638,9 +638,11 @@ func (g *gache[V]) numWorkers() int {
 	return nprocs
 }
 
+const cacheLineSize = 64
+
 type workerCounter struct {
 	val uint64
-	_   [56]byte
+	_   [cacheLineSize - unsafe.Sizeof(uint64(0))]byte
 }
 
 func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool) (expiredRows uint64) {
