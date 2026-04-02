@@ -652,18 +652,30 @@ func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool
 	}
 	counters := make([]workerCounter, nprocs)
 
+	// Pre-compute the current time once for the entire sweep. Cache expiration
+	// is inherently approximate (background sweeps already run on intervals),
+	// so the trade-off of a single timestamp per loop() call is acceptable.
+	// For very large caches the sweep itself may take tens of milliseconds,
+	// meaning entries expiring during the sweep may survive until the next one.
+	now := fastime.UnixNanoNow()
+
+	// Non-cancellable contexts (e.g. context.Background()) have a nil Done
+	// channel. Skip the periodic ctx.Err() checks entirely for those.
+	cancelable := ctx.Done() != nil
+
 	// makeVisitor builds a per-worker RangePointer callback with workerID
-	// captured in the closure, eliminating the shared-fn wrapper indirection.
+	// and now captured in the closure. The isValid logic is inlined to avoid
+	// per-entry method-call overhead (function dispatch + defer + named returns).
 	makeVisitor := func(workerID int) func(k string, v *value[V]) bool {
 		if f != nil {
 			return func(k string, v *value[V]) bool {
-				if v == nil {
+				v.mu.RLock()
+				if v.key != k {
+					v.mu.RUnlock()
 					return true
 				}
-				valid, match := v.isValid(k)
-				if !match {
-					return true
-				}
+				valid := v.expire <= 0 || now <= v.expire
+				v.mu.RUnlock()
 				if !valid {
 					g.expiration(k)
 					counters[workerID].val++
@@ -673,11 +685,14 @@ func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool
 			}
 		}
 		return func(k string, v *value[V]) bool {
-			if v == nil {
+			v.mu.RLock()
+			if v.key != k {
+				v.mu.RUnlock()
 				return true
 			}
-			valid, match := v.isValid(k)
-			if match && !valid {
+			valid := v.expire <= 0 || now <= v.expire
+			v.mu.RUnlock()
+			if !valid {
 				g.expiration(k)
 				counters[workerID].val++
 			}
@@ -688,10 +703,12 @@ func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool
 	if nprocs <= 1 {
 		visit := makeVisitor(0)
 		for i := range slen {
-			if i&63 == 0 && ctx.Err() != nil {
+			if cancelable && i&63 == 0 && ctx.Err() != nil {
 				break
 			}
-			g.shards[i].RangePointer(visit)
+			if g.shards[i].HasEntries() {
+				g.shards[i].RangePointer(visit)
+			}
 		}
 		return counters[0].val
 	}
@@ -709,10 +726,12 @@ func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool
 		visit := makeVisitor(workerID)
 		end := min(start+chunkSize, int(slen))
 		for j := start; j < end; j++ {
-			if j&63 == 0 && ctx.Err() != nil {
+			if cancelable && j&63 == 0 && ctx.Err() != nil {
 				return
 			}
-			g.shards[j].RangePointer(visit)
+			if g.shards[j].HasEntries() {
+				g.shards[j].RangePointer(visit)
+			}
 		}
 	}
 

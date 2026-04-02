@@ -566,6 +566,17 @@ func (m *Map[K, V]) Len() int {
 	return l
 }
 
+// HasEntries returns true if the map contains at least one entry.
+// This is a fast lock-free check using the entry counter and is intended
+// for use as a pre-filter to skip empty maps during bulk iteration.
+func (m *Map[K, V]) HasEntries() bool {
+	if m == nil {
+		return false
+	}
+	c := m.l.Load()
+	return c != nil && c.Load() > 0
+}
+
 func (m *Map[K, V]) Size() (size uintptr) {
 	if m == nil {
 		return 0
