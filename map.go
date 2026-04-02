@@ -577,6 +577,40 @@ func (m *Map[K, V]) HasEntries() bool {
 	return c != nil && c.Load() > 0
 }
 
+// RangePointerNonEmpty combines a HasEntries check with RangePointer in
+// a single method call. It uses the entry counter to skip empty maps
+// (avoiding the function-call overhead of a separate HasEntries call),
+// then falls through to the normal RangePointer logic for non-empty maps.
+func (m *Map[K, V]) RangePointerNonEmpty(f func(key K, value *V) bool) {
+	if c := m.l.Load(); c == nil || c.Load() <= 0 {
+		return
+	}
+
+	read := m.loadReadOnly()
+	if read.amended {
+		m.mu.Lock()
+		read = m.loadReadOnly()
+		if read.amended {
+			read = readOnly[K, V]{m: m.dirty}
+			copyRead := read
+			m.read.Store(&copyRead)
+			m.dirty = nil
+			m.misses = 0
+		}
+		m.mu.Unlock()
+	}
+
+	for k, e := range read.m {
+		v, ok := e.loadPointer()
+		if !ok {
+			continue
+		}
+		if !f(k, v) {
+			break
+		}
+	}
+}
+
 func (m *Map[K, V]) Size() (size uintptr) {
 	if m == nil {
 		return 0
