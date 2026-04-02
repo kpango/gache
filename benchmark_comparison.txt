@@ -1,0 +1,2 @@
+PASS
+ok  	github.com/kpango/gache/v2	16.622s
