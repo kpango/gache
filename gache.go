@@ -187,7 +187,8 @@ func (v *value[V]) isValid(key string) (valid bool, match bool) {
 	if v.key != key {
 		return false, false
 	}
-	return v.expire <= 0 || fastime.UnixNanoNow() <= v.expire, true
+	expire := atomic.LoadInt64(&v.expire)
+	return expire <= 0 || fastime.UnixNanoNow() <= expire, true
 }
 
 // reset zeros out all fields to prevent memory leaks from retained references
@@ -197,7 +198,7 @@ func (v *value[V]) reset() {
 	var zero V
 	v.key = ""
 	v.val = zero
-	v.expire = 0
+	atomic.StoreInt64(&v.expire, 0)
 	v.mu.Unlock()
 }
 
@@ -452,7 +453,7 @@ func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
 		return v, 0, false
 	}
 	v = val.val
-	expire = val.expire
+	expire = atomic.LoadInt64(&val.expire)
 	val.mu.RUnlock()
 
 	if expire <= 0 || fastime.UnixNanoNow() <= expire {
@@ -507,7 +508,7 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	newVal.mu.Lock()
 	newVal.key = key
 	newVal.val = val
-	newVal.expire = expire
+	atomic.StoreInt64(&newVal.expire, expire)
 	newVal.mu.Unlock()
 	old, loaded := shard.SwapPointer(key, newVal)
 	if loaded {
@@ -621,7 +622,7 @@ func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gac
 			return true
 		}
 		val := v.val
-		exp := v.expire
+		exp := atomic.LoadInt64(&v.expire)
 		v.mu.RUnlock()
 		return f(k, val, exp)
 	})
@@ -638,77 +639,160 @@ func (g *gache[V]) numWorkers() int {
 	return nprocs
 }
 
+const cacheLineSize = 64
+
+type workerCounter struct {
+	val uint64
+	_   [cacheLineSize - unsafe.Sizeof(uint64(0))]byte
+}
+
 func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool) (expiredRows uint64) {
 	nprocs := g.numWorkers()
 	if slenInt := int(slen); nprocs > slenInt {
 		nprocs = slenInt
 	}
-	var fn func(workerID int, k string, v *value[V]) bool
-	if f != nil {
-		fn = func(workerID int, k string, v *value[V]) bool {
-			if v != nil {
-				valid, match := v.isValid(k)
-				if !match {
-					return true
-				}
-				if !valid {
-					g.expiration(k)
-					atomic.AddUint64(&expiredRows, 1)
-				} else {
+	counters := make([]workerCounter, nprocs)
+
+	// Pre-compute the current time once for the entire sweep. Cache expiration
+	// is inherently approximate (background sweeps already run on intervals),
+	// so the trade-off of a single timestamp per loop() call is acceptable.
+	// For very large caches the sweep itself may take tens of milliseconds,
+	// meaning entries expiring during the sweep may survive until the next one.
+	now := fastime.UnixNanoNow()
+
+	// makeVisitor builds a per-worker RangePointer callback with workerID
+	// and now captured in the closure. The expire field is read atomically
+	// without holding the RLock, saving two atomic operations (RLock + RUnlock)
+	// per non-expired entry. Only entries that appear expired need the RLock
+	// to verify the key before calling expiration.
+	makeVisitor := func(workerID int) func(k string, v *value[V]) bool {
+		if f != nil {
+			return func(k string, v *value[V]) bool {
+				// Lock-free fast path: read expire atomically.
+				expire := atomic.LoadInt64(&v.expire)
+				if expire <= 0 || now <= expire {
+					// Not expired — call user callback directly.
 					return f(workerID, k, v)
 				}
-			}
-			return true
-		}
-	} else {
-		fn = func(_ int, k string, v *value[V]) bool {
-			if v != nil {
-				valid, match := v.isValid(k)
-				if match && !valid {
-					g.expiration(k)
-					atomic.AddUint64(&expiredRows, 1)
+				// Possibly expired — verify key under lock before expiring.
+				v.mu.RLock()
+				if v.key != k {
+					v.mu.RUnlock()
+					return true
 				}
+				// Re-check expire under lock (may have been refreshed).
+				expire = atomic.LoadInt64(&v.expire)
+				valid := expire <= 0 || now <= expire
+				v.mu.RUnlock()
+				if !valid {
+					g.expiration(k)
+					counters[workerID].val++
+					return true
+				}
+				return f(workerID, k, v)
+			}
+		}
+		return func(k string, v *value[V]) bool {
+			expire := atomic.LoadInt64(&v.expire)
+			if expire <= 0 || now <= expire {
+				return true
+			}
+			v.mu.RLock()
+			if v.key != k {
+				v.mu.RUnlock()
+				return true
+			}
+			expire = atomic.LoadInt64(&v.expire)
+			valid := expire <= 0 || now <= expire
+			v.mu.RUnlock()
+			if !valid {
+				g.expiration(k)
+				counters[workerID].val++
 			}
 			return true
 		}
 	}
+
+	// Non-cancellable contexts (e.g. context.Background()) have a nil Done
+	// channel. Build separate iteration paths to avoid a per-shard branch.
+	cancelable := ctx.Done() != nil
 
 	if nprocs <= 1 {
-		for i := range slen {
-			if ctx.Err() != nil {
-				break
+		visit := makeVisitor(0)
+		if cancelable {
+			for i := range slen {
+				if i&63 == 0 && ctx.Err() != nil {
+					break
+				}
+				g.shards[i].RangePointerNonEmpty(visit)
 			}
-			g.shards[i].RangePointer(func(k string, v *value[V]) bool { return fn(0, k, v) })
+		} else {
+			for i := range slen {
+				g.shards[i].RangePointerNonEmpty(visit)
+			}
 		}
-		return atomic.LoadUint64(&expiredRows)
+		return counters[0].val
 	}
 
-	var idx atomic.Uint64
+	// Partition shards statically among workers — each worker owns an exclusive
+	// contiguous range, eliminating the shared atomic work-stealing index.
+	chunkSize := (int(slen) + nprocs - 1) / nprocs
 	var wg sync.WaitGroup
-	worker := func(workerID int) {
-		for {
-			endIdx := idx.Add(16)
-			startIdx := endIdx - 16
-			if startIdx >= slen || ctx.Err() != nil {
-				wg.Done()
-				return
-			}
-			if endIdx > slen {
-				endIdx = slen
-			}
-			for j := startIdx; j < endIdx; j++ {
-				g.shards[j].RangePointer(func(k string, v *value[V]) bool { return fn(workerID, k, v) })
-			}
-		}
-	}
 
 	wg.Add(nprocs)
 	for i := range nprocs - 1 {
-		go worker(i)
+		go func(workerID int) {
+			start := workerID * chunkSize
+			if start >= int(slen) {
+				wg.Done()
+				return
+			}
+			visit := makeVisitor(workerID)
+			end := min(start+chunkSize, int(slen))
+			chunk := g.shards[start:end]
+			if cancelable {
+				for j := range chunk {
+					if j&63 == 0 && ctx.Err() != nil {
+						break
+					}
+					chunk[j].RangePointerNonEmpty(visit)
+				}
+			} else {
+				for _, shard := range chunk {
+					shard.RangePointerNonEmpty(visit)
+				}
+			}
+			wg.Done()
+		}(i)
 	}
-	worker(nprocs - 1)
+
+	// Last worker runs on the calling goroutine.
+	lastID := nprocs - 1
+	start := lastID * chunkSize
+	if start < int(slen) {
+		visit := makeVisitor(lastID)
+		end := min(start+chunkSize, int(slen))
+		chunk := g.shards[start:end]
+		if cancelable {
+			for j := range chunk {
+				if j&63 == 0 && ctx.Err() != nil {
+					break
+				}
+				chunk[j].RangePointerNonEmpty(visit)
+			}
+		} else {
+			for _, shard := range chunk {
+				shard.RangePointerNonEmpty(visit)
+			}
+		}
+	}
+	wg.Done()
+
 	wg.Wait()
-	return atomic.LoadUint64(&expiredRows)
+	for i := range nprocs {
+		expiredRows += counters[i].val
+	}
+	return expiredRows
 }
 
 // Len returns the total number of entries (including possibly expired but not
@@ -909,7 +993,7 @@ func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
 			newVal.mu.Lock()
 			newVal.key = key
 			newVal.val = val.val
-			newVal.expire = val.expire + int64(addExp)
+			atomic.StoreInt64(&newVal.expire, atomic.LoadInt64(&val.expire)+int64(addExp))
 			newVal.mu.Unlock()
 			copied = true
 		}
@@ -992,7 +1076,7 @@ func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool)
 			newVal.mu.Lock()
 			newVal.key = key
 			newVal.val = val.val
-			newVal.expire = fastime.UnixNanoNow() + int64(d)
+			atomic.StoreInt64(&newVal.expire, fastime.UnixNanoNow()+int64(d))
 			newVal.mu.Unlock()
 			v = newVal.val
 			copied = true
@@ -1066,7 +1150,8 @@ func (g *gache[V]) Pop(key string) (v V, ok bool) {
 		return v, false
 	}
 	v = val.val
-	valid := val.expire <= 0 || fastime.UnixNanoNow() <= val.expire
+	expire := atomic.LoadInt64(&val.expire)
+	valid := expire <= 0 || fastime.UnixNanoNow() <= expire
 	val.mu.RUnlock()
 	val.reset()
 	g.valPool.Put(val)
@@ -1117,7 +1202,7 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 	newVal.mu.Lock()
 	newVal.key = key
 	newVal.val = val
-	newVal.expire = exp
+	atomic.StoreInt64(&newVal.expire, exp)
 	newVal.mu.Unlock()
 
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
