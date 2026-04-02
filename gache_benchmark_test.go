@@ -613,3 +613,33 @@ func BenchmarkGache_HeavyContention(b *testing.B) {
 		}
 	})
 }
+
+// BenchmarkGache_ConcurrentWriteRead measures the performance of calling Write and Read heavily under concurrent access.
+func BenchmarkGache_ConcurrentWriteRead(b *testing.B) {
+	b.ReportAllocs()
+	gc := New[int]()
+	// Prepopulate the cache to simulate a realistic state
+	for i := 0; i < 1000; i++ {
+		gc.Set(strconv.Itoa(i), i)
+	}
+
+	var writeBuf bytes.Buffer
+	err := gc.Write(context.Background(), &writeBuf)
+	if err != nil {
+		b.Fatal(err)
+	}
+	serializedData := writeBuf.Bytes()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			// Simulate concurrent Write
+			var localBuf bytes.Buffer
+			_ = gc.Write(context.Background(), &localBuf)
+
+			// Simulate concurrent Read
+			tempCache := New[int]()
+			_ = tempCache.Read(bytes.NewReader(serializedData))
+		}
+	})
+}
