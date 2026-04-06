@@ -187,7 +187,8 @@ func (v *value[V]) isValid(key string) (valid bool, match bool) {
 	if v.key != key {
 		return false, false
 	}
-	return v.expire <= 0 || fastime.UnixNanoNow() <= v.expire, true
+	expire := atomic.LoadInt64(&v.expire)
+	return expire <= 0 || fastime.UnixNanoNow() <= expire, true
 }
 
 // reset zeros out all fields to prevent memory leaks from retained references
@@ -197,7 +198,7 @@ func (v *value[V]) reset() {
 	var zero V
 	v.key = ""
 	v.val = zero
-	v.expire = 0
+	atomic.StoreInt64(&v.expire, 0)
 	v.mu.Unlock()
 }
 
@@ -452,7 +453,7 @@ func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
 		return v, 0, false
 	}
 	v = val.val
-	expire = val.expire
+	expire = atomic.LoadInt64(&val.expire)
 	val.mu.RUnlock()
 
 	if expire <= 0 || fastime.UnixNanoNow() <= expire {
@@ -507,7 +508,7 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	newVal.mu.Lock()
 	newVal.key = key
 	newVal.val = val
-	newVal.expire = expire
+	atomic.StoreInt64(&newVal.expire, expire)
 	newVal.mu.Unlock()
 	old, loaded := shard.SwapPointer(key, newVal)
 	if loaded {
@@ -592,10 +593,8 @@ func (g *gache[V]) expiration(key string) {
 //
 //	n := gc.DeleteExpired(context.Background())
 //	fmt.Printf("removed %d expired entries\n", n)
-func (g *gache[V]) DeleteExpired(ctx context.Context) (expired uint64) {
-	return g.loop(ctx, func(workerID int, k string, v *value[V]) bool {
-		return true
-	})
+func (g *gache[V]) DeleteExpired(ctx context.Context) uint64 {
+	return g.loop(ctx, nil)
 }
 
 // Range iterates over every non-expired entry in the cache, calling f for each
@@ -621,7 +620,7 @@ func (g *gache[V]) Range(ctx context.Context, f func(string, V, int64) bool) Gac
 			return true
 		}
 		val := v.val
-		exp := v.expire
+		exp := atomic.LoadInt64(&v.expire)
 		v.mu.RUnlock()
 		return f(k, val, exp)
 	})
@@ -638,77 +637,77 @@ func (g *gache[V]) numWorkers() int {
 	return nprocs
 }
 
-func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool) (expiredRows uint64) {
+func (g *gache[V]) loop(ctx context.Context, f func(int, string, *value[V]) bool) uint64 {
 	nprocs := g.numWorkers()
 	if slenInt := int(slen); nprocs > slenInt {
 		nprocs = slenInt
 	}
-	var fn func(workerID int, k string, v *value[V]) bool
-	if f != nil {
-		fn = func(workerID int, k string, v *value[V]) bool {
-			if v != nil {
-				valid, match := v.isValid(k)
-				if !match {
-					return true
-				}
-				if !valid {
-					g.expiration(k)
-					atomic.AddUint64(&expiredRows, 1)
-				} else {
-					return f(workerID, k, v)
-				}
-			}
-			return true
-		}
-	} else {
-		fn = func(_ int, k string, v *value[V]) bool {
-			if v != nil {
-				valid, match := v.isValid(k)
-				if match && !valid {
-					g.expiration(k)
-					atomic.AddUint64(&expiredRows, 1)
-				}
-			}
-			return true
-		}
-	}
 
-	if nprocs <= 1 {
-		for i := range slen {
-			if ctx.Err() != nil {
-				break
-			}
-			g.shards[i].RangePointer(func(k string, v *value[V]) bool { return fn(0, k, v) })
-		}
-		return atomic.LoadUint64(&expiredRows)
-	}
+	now := fastime.UnixNanoNow()
+	cancelable := ctx.Done() != nil
+	chunkSize := (int(slen) + nprocs - 1) / nprocs
 
-	var idx atomic.Uint64
+	var expired uint64
 	var wg sync.WaitGroup
-	worker := func(workerID int) {
-		for {
-			endIdx := idx.Add(16)
-			startIdx := endIdx - 16
-			if startIdx >= slen || ctx.Err() != nil {
-				wg.Done()
-				return
-			}
-			if endIdx > slen {
-				endIdx = slen
-			}
-			for j := startIdx; j < endIdx; j++ {
-				g.shards[j].RangePointer(func(k string, v *value[V]) bool { return fn(workerID, k, v) })
-			}
+	wg.Add(nprocs)
+	for i := range nprocs {
+		start := i * chunkSize
+		end := min(start+chunkSize, int(slen))
+		if start >= int(slen) {
+			wg.Done()
+			continue
+		}
+		if i < nprocs-1 {
+			go g.iterateShards(&wg, &expired, i, start, end, now, cancelable, ctx, f)
+		} else {
+			g.iterateShards(&wg, &expired, i, start, end, now, cancelable, ctx, f)
 		}
 	}
-
-	wg.Add(nprocs)
-	for i := range nprocs - 1 {
-		go worker(i)
-	}
-	worker(nprocs - 1)
 	wg.Wait()
-	return atomic.LoadUint64(&expiredRows)
+	return expired
+}
+
+// iterateShards processes entries in shards[start:end]. The f==nil / f!=nil
+// split inside the shard loop is intentional: it hoists the branch outside the
+// per-entry loop, eliminating one conditional per entry in the hot path.
+func (g *gache[V]) iterateShards(
+	wg *sync.WaitGroup,
+	expired *uint64,
+	workerID, start, end int,
+	now int64,
+	cancelable bool,
+	ctx context.Context,
+	f func(int, string, *value[V]) bool,
+) {
+	defer wg.Done()
+	shards := g.shards[start:end]
+	for j, shard := range shards {
+		if cancelable && j&63 == 0 && ctx.Err() != nil {
+			return
+		}
+		for k, e := range shard.readMap() {
+			v, ok := e.loadPointer()
+			if ok {
+				expire := atomic.LoadInt64(&v.expire)
+				if expire > 0 && now > expire {
+					v.mu.RLock()
+					match := v.key == k
+					v.mu.RUnlock()
+					if match {
+						g.expiration(k)
+						atomic.AddUint64(expired, 1)
+						continue
+					}
+				}
+
+				if f != nil && !f(workerID, k, v) {
+					return
+				}
+			}
+
+		}
+
+	}
 }
 
 // Len returns the total number of entries (including possibly expired but not
@@ -909,7 +908,7 @@ func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
 			newVal.mu.Lock()
 			newVal.key = key
 			newVal.val = val.val
-			newVal.expire = val.expire + int64(addExp)
+			atomic.StoreInt64(&newVal.expire, atomic.LoadInt64(&val.expire)+int64(addExp))
 			newVal.mu.Unlock()
 			copied = true
 		}
@@ -992,7 +991,7 @@ func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool)
 			newVal.mu.Lock()
 			newVal.key = key
 			newVal.val = val.val
-			newVal.expire = fastime.UnixNanoNow() + int64(d)
+			atomic.StoreInt64(&newVal.expire, fastime.UnixNanoNow()+int64(d))
 			newVal.mu.Unlock()
 			v = newVal.val
 			copied = true
@@ -1066,7 +1065,8 @@ func (g *gache[V]) Pop(key string) (v V, ok bool) {
 		return v, false
 	}
 	v = val.val
-	valid := val.expire <= 0 || fastime.UnixNanoNow() <= val.expire
+	expire := atomic.LoadInt64(&val.expire)
+	valid := expire <= 0 || fastime.UnixNanoNow() <= expire
 	val.mu.RUnlock()
 	val.reset()
 	g.valPool.Put(val)
@@ -1117,7 +1117,7 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 	newVal.mu.Lock()
 	newVal.key = key
 	newVal.val = val
-	newVal.expire = exp
+	atomic.StoreInt64(&newVal.expire, exp)
 	newVal.mu.Unlock()
 
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
