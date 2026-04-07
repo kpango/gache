@@ -442,7 +442,8 @@ func (g *gache[V]) Values(ctx context.Context) (values []V) {
 
 // get returns value & exists from key.
 func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
-	val, ok := g.shards[getShardID(key, g.maxKeyLength)].LoadPointer(key)
+	shard := g.shards[getShardID(key, g.maxKeyLength)]
+	val, ok := shard.LoadPointer(key)
 	if !ok {
 		return v, 0, false
 	}
@@ -460,7 +461,7 @@ func (g *gache[V]) get(key string) (v V, expire int64, ok bool) {
 		return v, expire, true
 	}
 
-	g.expiration(key)
+	g.expiration(key, shard)
 	return v, expire, false
 }
 
@@ -570,10 +571,22 @@ func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 	return v, false
 }
 
-func (g *gache[V]) expiration(key string) {
-	v, loaded := g.Delete(key)
-	if loaded && g.expFuncEnabled {
-		g.expChan <- kv[V]{key: key, value: v}
+func (g *gache[V]) expiration(key string, shard *Map[string, value[V]]) {
+	val, loaded := shard.LoadAndDeletePointer(key)
+	if loaded {
+		val.mu.RLock()
+		if val.key != key {
+			val.mu.RUnlock()
+			return
+		}
+		v := val.val
+		val.mu.RUnlock()
+		val.reset()
+		g.valPool.Put(val)
+
+		if g.expFuncEnabled {
+			g.expChan <- kv[V]{key: key, value: v}
+		}
 	}
 }
 
@@ -694,7 +707,7 @@ func (g *gache[V]) iterateShards(
 					match := v.key == k
 					v.mu.RUnlock()
 					if match {
-						g.expiration(k)
+						g.expiration(k, shard)
 						atomic.AddUint64(expired, 1)
 						continue
 					}
@@ -890,7 +903,7 @@ func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
 			continue
 		}
 		if !valid {
-			g.expiration(key)
+			g.expiration(key, shard)
 			if newVal != nil {
 				newVal.reset()
 				g.valPool.Put(newVal)
@@ -973,7 +986,7 @@ func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool)
 			continue
 		}
 		if !valid {
-			g.expiration(key)
+			g.expiration(key, shard)
 			if newVal != nil {
 				newVal.reset()
 				g.valPool.Put(newVal)
