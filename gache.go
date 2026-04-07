@@ -81,6 +81,8 @@ type (
 		expire         int64
 		maxKeyLength   uint64
 		maxWorkers     int
+		elementOverhead uintptr
+		totalSize       atomic.Uintptr
 	}
 
 	value[V any] struct {
@@ -154,7 +156,9 @@ func New[V any](opts ...Option[V]) Gache[V] {
 	}, opts...) {
 		opt(g)
 	}
-	g.expChan = make(chan kv[V], len(g.shards)*10)
+		g.expChan = make(chan kv[V], len(g.shards)*10)
+	g.elementOverhead = unsafe.Sizeof(value[V]{}) + unsafe.Sizeof(entry[V]{}) + 48
+	g.totalSize.Store(unsafe.Sizeof(*g) + uintptr(len(g.shards))*unsafe.Sizeof(Map[string, value[V]]{}))
 	return g
 }
 
@@ -514,6 +518,8 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	if loaded {
 		old.reset()
 		g.valPool.Put(old)
+	} else {
+		g.totalSize.Add(uintptr(len(key)) + g.elementOverhead)
 	}
 }
 
@@ -563,6 +569,7 @@ func (g *gache[V]) Delete(key string) (v V, loaded bool) {
 		}
 		v = val.val
 		val.mu.RUnlock()
+		g.totalSize.Add(^(uintptr(len(key)) + g.elementOverhead - 1))
 		val.reset()
 		g.valPool.Put(val)
 		return v, true
@@ -736,15 +743,7 @@ func (g *gache[V]) Len() (l int) {
 //	gc.Set("k", "v")
 //	fmt.Printf("cache size: %d bytes\n", gc.Size())
 func (g *gache[V]) Size() (size uintptr) {
-	size += unsafe.Sizeof(g.expFuncEnabled) // bool
-	size += unsafe.Sizeof(g.expire)         // int64
-	size += unsafe.Sizeof(g.cancel)         // atomic.Pointer[context.CancelFunc]
-	size += unsafe.Sizeof(g.expChan)        // chan kv[V]
-	size += unsafe.Sizeof(g.expFunc)        // func(context.Context, string, V)
-	for _, shard := range g.shards {
-		size += shard.Size()
-	}
-	return size
+	return g.totalSize.Load()
 }
 
 // Write serialises all non-expired cache entries to w using encoding/gob.
@@ -853,6 +852,7 @@ func (g *gache[V]) Stop() {
 //	gc.Clear()
 //	fmt.Println(gc.Len()) // 0
 func (g *gache[V]) Clear() {
+	g.totalSize.Store(unsafe.Sizeof(*g) + uintptr(len(g.shards))*unsafe.Sizeof(Map[string, value[V]]{}))
 	for i := range g.shards {
 		if g.shards[i] == nil {
 			g.shards[i] = newMap[V]()
@@ -1066,6 +1066,7 @@ func (g *gache[V]) Pop(key string) (v V, ok bool) {
 	}
 	v = val.val
 	expire := atomic.LoadInt64(&val.expire)
+		g.totalSize.Add(^(uintptr(len(key)) + g.elementOverhead - 1))
 	valid := expire <= 0 || fastime.UnixNanoNow() <= expire
 	val.mu.RUnlock()
 	val.reset()
@@ -1124,6 +1125,7 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 	for {
 		actual, loaded := shard.LoadOrStorePointer(key, newVal)
 		if !loaded {
+		g.totalSize.Add(uintptr(len(key)) + g.elementOverhead)
 			return
 		}
 
