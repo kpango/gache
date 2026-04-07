@@ -807,8 +807,11 @@ func (g *gache[V]) Read(r io.Reader) error {
 
 	i := 0
 	for k, v := range m {
-		chunks[i%numWorkers] = append(chunks[i%numWorkers], kv[V]{key: k, value: v})
+		chunks[i] = append(chunks[i], kv[V]{key: k, value: v})
 		i++
+		if i >= numWorkers {
+			i = 0
+		}
 	}
 
 	wg.Add(numWorkers)
