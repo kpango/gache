@@ -505,11 +505,9 @@ func (g *gache[V]) set(key string, val V, expire int64) {
 	}
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
 	newVal := g.valPool.Get().(*value[V])
-	newVal.mu.Lock()
 	newVal.key = key
 	newVal.val = val
 	atomic.StoreInt64(&newVal.expire, expire)
-	newVal.mu.Unlock()
 	old, loaded := shard.SwapPointer(key, newVal)
 	if loaded {
 		old.reset()
@@ -905,11 +903,9 @@ func (g *gache[V]) ExtendExpire(key string, addExp time.Duration) {
 		var copied bool
 		val.mu.RLock()
 		if val.key == key {
-			newVal.mu.Lock()
 			newVal.key = key
 			newVal.val = val.val
 			atomic.StoreInt64(&newVal.expire, atomic.LoadInt64(&val.expire)+int64(addExp))
-			newVal.mu.Unlock()
 			copied = true
 		}
 		val.mu.RUnlock()
@@ -988,11 +984,9 @@ func (g *gache[V]) GetRefreshWithDur(key string, d time.Duration) (v V, ok bool)
 		var copied bool
 		val.mu.RLock()
 		if val.key == key {
-			newVal.mu.Lock()
 			newVal.key = key
 			newVal.val = val.val
 			atomic.StoreInt64(&newVal.expire, fastime.UnixNanoNow()+int64(d))
-			newVal.mu.Unlock()
 			v = newVal.val
 			copied = true
 		}
@@ -1114,11 +1108,9 @@ func (g *gache[V]) SetWithExpireIfNotExists(key string, val V, d time.Duration) 
 	}
 
 	newVal := g.valPool.Get().(*value[V])
-	newVal.mu.Lock()
 	newVal.key = key
 	newVal.val = val
 	atomic.StoreInt64(&newVal.expire, exp)
-	newVal.mu.Unlock()
 
 	shard := g.shards[getShardID(key, g.maxKeyLength)]
 	for {
