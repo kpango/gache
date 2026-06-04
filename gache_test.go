@@ -17,23 +17,25 @@ func forceBug(t *testing.T) {
 	t.Helper()
 	gc := New[int]()
 	gc.Set("old_key", 42)
-	shard := gc.(*gache[int]).shards[getShardID("old_key", gc.(*gache[int]).maxKeyLength)]
-	shard.Load("nonexistent1")
-	shard.Load("nonexistent2")
-	shard.Load("nonexistent3")
+	kl := gc.(*gache[int]).maxKeyLength
+	shard := gc.(*gache[int]).shards[getShardID("old_key", kl)&mask]
+	shard.loadNode(getShardID("nonexistent1", kl), "nonexistent1")
+	shard.loadNode(getShardID("nonexistent2", kl), "nonexistent2")
+	shard.loadNode(getShardID("nonexistent3", kl), "nonexistent3")
 
-	shard.InitReserve(10)
+	shard.initReserve(10)
 
 	for i := range 10000 {
 		key := fmt.Sprintf("k_%d", i)
-		if getShardID(key, gc.(*gache[int]).maxKeyLength) == getShardID("old_key", gc.(*gache[int]).maxKeyLength) {
+		if getShardID(key, kl)&mask == getShardID("old_key", kl)&mask {
 			gc.Set(key, 99)
 			break
 		}
 	}
 
 	for i := range 100 {
-		shard.Load(fmt.Sprintf("miss_%d", i))
+		k := fmt.Sprintf("miss_%d", i)
+		shard.loadNode(getShardID(k, kl), k)
 	}
 
 	if val, ok := gc.Get("old_key"); !ok || val != 42 {
@@ -271,13 +273,13 @@ func TestGache_GetShardID_MaxKeyLengthBetween1And32(t *testing.T) {
 			shortKey := longKey[:min(int(tt.kl/2+1), len(longKey))]
 
 			idLong := getShardID(longKey, tt.kl)
-			if idLong > mask {
-				t.Errorf("getShardID(longKey, %d) = %d, want <= %d (mask)", tt.kl, idLong, mask)
+			if idLong&mask > mask {
+				t.Errorf("getShardID(longKey, %d)&mask = %d, want <= %d (mask)", tt.kl, idLong&mask, mask)
 			}
 
 			idShort := getShardID(shortKey, tt.kl)
-			if idShort > mask {
-				t.Errorf("getShardID(shortKey, %d) = %d, want <= %d (mask)", tt.kl, idShort, mask)
+			if idShort&mask > mask {
+				t.Errorf("getShardID(shortKey, %d)&mask = %d, want <= %d (mask)", tt.kl, idShort&mask, mask)
 			}
 
 			longKey2 := strings.Repeat("a", 64) + "different-suffix"
@@ -304,8 +306,8 @@ func TestGache_GetShardID_MaxKeyLengthOne(t *testing.T) {
 	}
 
 	idB := getShardID("bcd", 1)
-	if idB > mask {
-		t.Errorf("getShardID(%q, 1) = %d, want <= %d (mask)", "bcd", idB, mask)
+	if idB&mask > mask {
+		t.Errorf("getShardID(%q, 1)&mask = %d, want <= %d (mask)", "bcd", idB&mask, mask)
 	}
 
 	want := uint64('a') & mask
@@ -334,13 +336,13 @@ func TestGache_GetShardID_MaxKeyLengthOver32(t *testing.T) {
 			shortKey := strings.Repeat("b", int(tt.kl)/2)
 
 			idLong := getShardID(longKey, tt.kl)
-			if idLong > mask {
-				t.Errorf("getShardID(longKey, %d) = %d, want <= %d (mask)", tt.kl, idLong, mask)
+			if idLong&mask > mask {
+				t.Errorf("getShardID(longKey, %d)&mask = %d, want <= %d (mask)", tt.kl, idLong&mask, mask)
 			}
 
 			idShort := getShardID(shortKey, tt.kl)
-			if idShort > mask {
-				t.Errorf("getShardID(shortKey, %d) = %d, want <= %d (mask)", tt.kl, idShort, mask)
+			if idShort&mask > mask {
+				t.Errorf("getShardID(shortKey, %d)&mask = %d, want <= %d (mask)", tt.kl, idShort&mask, mask)
 			}
 
 			key1 := strings.Repeat("c", int(tt.kl)) + "suffix1"
@@ -377,8 +379,8 @@ func TestGache_GetShardID_MaxKeyLengthZero(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			id := getShardID(tt.key, 0)
-			if id > mask {
-				t.Errorf("getShardID(%q, 0) = %d, want <= %d (mask)", tt.key, id, mask)
+			if id&mask > mask {
+				t.Errorf("getShardID(%q, 0)&mask = %d, want <= %d (mask)", tt.key, id&mask, mask)
 			}
 
 			id2 := getShardID(tt.key, 0)
@@ -436,8 +438,8 @@ func TestGache_GetShardID_ResultInRange(t *testing.T) {
 
 	for _, c := range cases {
 		id := getShardID(c.key, c.kl)
-		if id > mask {
-			t.Errorf("getShardID(%q, %d) = %d exceeds mask %d", c.key, c.kl, id, mask)
+		if id&mask > mask {
+			t.Errorf("getShardID(%q, %d)&mask = %d exceeds mask %d", c.key, c.kl, id&mask, mask)
 		}
 	}
 }
@@ -548,7 +550,7 @@ func TestGache_LenClearConcurrent(t *testing.T) {
 
 	actual := 0
 	for i := range g.shards {
-		g.shards[i].RangePointer(func(k string, v *value[int]) bool {
+		g.shards[i].rangeShard(func(k string, v *value[int]) bool {
 			actual++
 			return true
 		})
@@ -588,7 +590,7 @@ func TestGache_LenConcurrent(t *testing.T) {
 
 	actual := 0
 	for i := range g.shards {
-		g.shards[i].RangePointer(func(k string, v *value[int]) bool {
+		g.shards[i].rangeShard(func(k string, v *value[int]) bool {
 			actual++
 			return true
 		})
@@ -645,10 +647,11 @@ func TestGache_ReadDoesNotDropExisting(t *testing.T) {
 	gc := New[int]()
 	gc.Set("old_key", 42)
 	gc.Get("old_key1")
-	shard := gc.(*gache[int]).shards[getShardID("old_key", gc.(*gache[int]).maxKeyLength)]
-	shard.Load("nonexistent1")
-	shard.Load("nonexistent2")
-	shard.Load("nonexistent3")
+	kl := gc.(*gache[int]).maxKeyLength
+	shard := gc.(*gache[int]).shards[getShardID("old_key", kl)&mask]
+	shard.loadNode(getShardID("nonexistent1", kl), "nonexistent1")
+	shard.loadNode(getShardID("nonexistent2", kl), "nonexistent2")
+	shard.loadNode(getShardID("nonexistent3", kl), "nonexistent3")
 
 	var buf bytes.Buffer
 	m := map[string]int{"new_key": 99}
@@ -667,7 +670,8 @@ func TestGache_ReadDoesNotDropExisting(t *testing.T) {
 	}
 
 	for i := range 10000 {
-		shard.Load(fmt.Sprintf("miss_%d", i))
+		k := fmt.Sprintf("miss_%d", i)
+		shard.loadNode(getShardID(k, kl), k)
 	}
 
 	if val, ok := gc.Get("old_key"); !ok || val != 42 {
