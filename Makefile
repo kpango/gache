@@ -13,7 +13,7 @@ SAFE_BRANCH := $(shell echo "$(CURRENT_BRANCH)" | tr '/' '-')
 SAFE_BASE := $(shell echo "$(BASE_BRANCH)" | tr '/' '-')
 XARGS_NO_RUN_IF_EMPTY := $(eval XARGS_NO_RUN_IF_EMPTY := $(shell xargs --version 2>/dev/null | head -1 | grep -qi gnu && echo -r))$(XARGS_NO_RUN_IF_EMPTY)
 
-GO_VERSION := 1.26.1
+GO_VERSION := 1.26.4
 GOPATH := $(eval GOPATH := $(shell go env GOPATH))$(GOPATH)
 GOLINES_MAX_WIDTH     ?= 200
 
