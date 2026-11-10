@@ -116,18 +116,19 @@ func TestGetShardID_MaxKeyLength(t *testing.T) {
 	long64 := strings.Repeat("a", 64)
 	tests := []struct {
 		name string
+		a    string // a and b differ after their first kl bytes
+		b    string
 		kl   uint64
-		a, b string // differ after their first kl bytes
 	}{
-		{"kl=1 first byte only", 1, "abc", "axyz"},
-		{"kl=2", 2, long64, long64 + "different-suffix"},
-		{"kl=16", 16, long64, long64 + "different-suffix"},
-		{"kl=16 prefix", 16, strings.Repeat("p", 16) + "AAAAAA", strings.Repeat("p", 16) + "BBBBBB"},
-		{"kl=32", 32, long64, long64 + "different-suffix"},
-		{"kl=33 (hashMid)", 33, strings.Repeat("c", 33) + "suffix1", strings.Repeat("c", 33) + "suffix2"},
-		{"kl=50", 50, strings.Repeat("q", 50) + "SUFFIX1", strings.Repeat("q", 50) + "SUFFIX2"},
-		{"kl=64", 64, strings.Repeat("c", 64) + "suffix1", strings.Repeat("c", 64) + "suffix2"},
-		{"kl=256 (sampled)", 256, strings.Repeat("c", 256) + "suffix1", strings.Repeat("c", 256) + "suffix2"},
+		{name: "kl=1 first byte only", kl: 1, a: "abc", b: "axyz"},
+		{name: "kl=2", kl: 2, a: long64, b: long64 + "different-suffix"},
+		{name: "kl=16", kl: 16, a: long64, b: long64 + "different-suffix"},
+		{name: "kl=16 prefix", kl: 16, a: strings.Repeat("p", 16) + "AAAAAA", b: strings.Repeat("p", 16) + "BBBBBB"},
+		{name: "kl=32", kl: 32, a: long64, b: long64 + "different-suffix"},
+		{name: "kl=33 (hashMid)", kl: 33, a: strings.Repeat("c", 33) + "suffix1", b: strings.Repeat("c", 33) + "suffix2"},
+		{name: "kl=50", kl: 50, a: strings.Repeat("q", 50) + "SUFFIX1", b: strings.Repeat("q", 50) + "SUFFIX2"},
+		{name: "kl=64", kl: 64, a: strings.Repeat("c", 64) + "suffix1", b: strings.Repeat("c", 64) + "suffix2"},
+		{name: "kl=256 (sampled)", kl: 256, a: strings.Repeat("c", 256) + "suffix1", b: strings.Repeat("c", 256) + "suffix2"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

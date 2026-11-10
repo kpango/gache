@@ -167,7 +167,7 @@ func checkExpungeInvariant[K comparable, V any](t testing.TB, m *shardMap[K, V])
 type gcPayload struct {
 	a, b uint64
 	k    int
-	pad  [40]byte
+	_    [40]byte
 }
 
 func (p *gcPayload) ok() bool { return p != nil && p.a == ^p.b }

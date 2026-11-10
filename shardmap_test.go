@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"hash/maphash"
 	"math/rand/v2"
-	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -54,50 +53,50 @@ func TestNode_StateEncoding(t *testing.T) {
 	}
 }
 
-func TestHasPointers_Kinds(t *testing.T) {
+func TestTypeHasPointers_Kinds(t *testing.T) {
 	t.Parallel()
 
 	type (
-		onePtr  struct{ p *int }
-		nested  struct{ o onePtr }
+		onePtr  struct{ _ *int }
+		nested  struct{ _ onePtr }
 		zeroPad struct {
 			_ [0]int
-			p *int
+			_ *int
 		}
-		two     struct{ a, b int32 }
+		two     struct{ _, _ int32 }
 		bytes8  [8]byte
 		ptrArr  [1]*int
 		zeroArr [0]*int
 	)
 	tests := []struct {
-		t    reflect.Type
+		got  func() bool
 		name string
 		want bool
 	}{
-		{reflect.TypeFor[*int](), "pointer", true},
-		{reflect.TypeFor[map[string]int](), "map", true},
-		{reflect.TypeFor[chan int](), "chan", true},
-		{reflect.TypeFor[func()](), "func", true},
-		{reflect.TypeFor[unsafe.Pointer](), "unsafe.Pointer", true},
-		{reflect.TypeFor[onePtr](), "struct{*int}", true},
-		{reflect.TypeFor[nested](), "nested struct", true},
-		{reflect.TypeFor[zeroPad](), "zero-size field before the pointer", true},
-		{reflect.TypeFor[ptrArr](), "[1]*int", true},
-		{reflect.TypeFor[int](), "int", false},
-		{reflect.TypeFor[uint64](), "uint64", false},
-		{reflect.TypeFor[float64](), "float64", false},
-		{reflect.TypeFor[complex64](), "complex64", false},
-		{reflect.TypeFor[uintptr](), "uintptr", false},
-		{reflect.TypeFor[two](), "struct{int32,int32}", false},
-		{reflect.TypeFor[bytes8](), "[8]byte", false},
-		{reflect.TypeFor[zeroArr](), "[0]*int", false},
-		{reflect.TypeFor[struct{}](), "struct{}", false},
+		{typeHasPointers[*int], "pointer", true},
+		{typeHasPointers[map[string]int], "map", true},
+		{typeHasPointers[chan int], "chan", true},
+		{typeHasPointers[func()], "func", true},
+		{typeHasPointers[unsafe.Pointer], "unsafe.Pointer", true},
+		{typeHasPointers[onePtr], "struct{*int}", true},
+		{typeHasPointers[nested], "nested struct", true},
+		{typeHasPointers[zeroPad], "zero-size field before the pointer", true},
+		{typeHasPointers[ptrArr], "[1]*int", true},
+		{typeHasPointers[int], "int", false},
+		{typeHasPointers[uint64], "uint64", false},
+		{typeHasPointers[float64], "float64", false},
+		{typeHasPointers[complex64], "complex64", false},
+		{typeHasPointers[uintptr], "uintptr", false},
+		{typeHasPointers[two], "struct{int32,int32}", false},
+		{typeHasPointers[bytes8], "[8]byte", false},
+		{typeHasPointers[zeroArr], "[0]*int", false},
+		{typeHasPointers[struct{}], "struct{}", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := hasPointers(tt.t); got != tt.want {
-				t.Fatalf("hasPointers(%v) = %v, want %v", tt.t, got, tt.want)
+			if got := tt.got(); got != tt.want {
+				t.Fatalf("typeHasPointers(%s) = %v, want %v", tt.name, got, tt.want)
 			}
 		})
 	}
@@ -490,7 +489,7 @@ func TestShardMap_LengthCounterSurvivesClearChurn(t *testing.T) {
 	wg.Wait()
 
 	live := 0
-	sm.rangeShard(func(int, *value[int, int]) bool { live++; return true })
+	sm.rangeShard(func(int, *value[int, int]) { live++ })
 	if got := sm.length(); got != live {
 		t.Fatalf("length counter = %d, live nodes = %d", got, live)
 	}
@@ -1035,7 +1034,7 @@ func TestShardMap_SameKeyChurnKeepsInvariantAndLength(t *testing.T) {
 		checkExpungeInvariant(t, sm)
 		sm.readSnapshot()
 		live := 0
-		sm.rangeShard(func(int, *value[int, int]) bool { live++; return true })
+		sm.rangeShard(func(int, *value[int, int]) { live++ })
 		if got := sm.length(); got != live {
 			t.Fatalf("round %d: length counter = %d, live nodes after promotion = %d", n, got, live)
 		}
@@ -1280,7 +1279,7 @@ func TestShardMap_ExpireIf(t *testing.T) {
 			}
 			for k := range tt.stored {
 				_, _, ok := sm.loadValue(h, k)
-				if want := !(tt.want && k == tt.key); ok != want {
+				if want := !tt.want || k != tt.key; ok != want {
 					t.Errorf("key %q present = %v, want %v", k, ok, want)
 				}
 			}
@@ -1663,7 +1662,7 @@ func TestShardMap_DeleteExpiredCollisionChain(t *testing.T) {
 	shard.dirty = map[uint64]*value[string, string]{testHash: n0}
 	// Initial live count: 4 (n0, n1, n2, n4; n3 is deleted)
 	shard.counter().Store(4)
-	shard.read.Store(&readOnlyShard[string, string]{amended: true, c: shard.counter()})
+	shard.read.Store(&readOnlyShardOf[string, string, atomic.Pointer[string], atomic.Int64]{amended: true, c: shard.counter()})
 	shard.mu.Unlock()
 
 	var callbackKeys []string

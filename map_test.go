@@ -221,8 +221,8 @@ const (
 type contractArgs[V any] struct{ cur, eq, peer, nw, wrong V }
 
 type contractOp[V any] struct {
-	name string
 	do   func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) (got, want []any)
+	name string
 }
 
 func refCAS[V any](ref map[string]V, old, nw V) bool {
@@ -247,13 +247,13 @@ func refCAD[V any](ref map[string]V, old V) bool {
 // the plain-map reference and returns both result lists for comparison.
 func valueContractOps[V any]() []contractOp[V] {
 	cas := func(name string, old func(contractArgs[V]) V, nw func(contractArgs[V]) V) contractOp[V] {
-		return contractOp[V]{name, func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		return contractOp[V]{name: name, do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			o, n := old(a), nw(a)
 			return []any{m.CompareAndSwap(contractKey, o, n)}, []any{refCAS(ref, o, n)}
 		}}
 	}
 	cad := func(name string, old func(contractArgs[V]) V) contractOp[V] {
-		return contractOp[V]{name, func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		return contractOp[V]{name: name, do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			o := old(a)
 			return []any{m.CompareAndDelete(contractKey, o)}, []any{refCAD(ref, o)}
 		}}
@@ -264,22 +264,22 @@ func valueContractOps[V any]() []contractOp[V] {
 	nw := func(a contractArgs[V]) V { return a.nw }
 
 	return []contractOp[V]{
-		{"Load", func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		{name: "Load", do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			gv, gok := m.Load(contractKey)
 			wv, wok := ref[contractKey]
 			return []any{gv, gok}, []any{wv, wok}
 		}},
-		{"Store", func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		{name: "Store", do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			m.Store(contractKey, a.nw)
 			ref[contractKey] = a.nw
 			return nil, nil
 		}},
-		{"Store unrelated value", func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		{name: "Store unrelated value", do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			m.Store(contractKey, a.wrong)
 			ref[contractKey] = a.wrong
 			return nil, nil
 		}},
-		{"LoadOrStore", func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		{name: "LoadOrStore", do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			gv, gl := m.LoadOrStore(contractKey, a.nw)
 			if cur, ok := ref[contractKey]; ok {
 				return []any{gv, gl}, []any{cur, true}
@@ -287,18 +287,18 @@ func valueContractOps[V any]() []contractOp[V] {
 			ref[contractKey] = a.nw
 			return []any{gv, gl}, []any{a.nw, false}
 		}},
-		{"LoadAndDelete", func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		{name: "LoadAndDelete", do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			gv, gl := m.LoadAndDelete(contractKey)
 			wv, wl := ref[contractKey]
 			delete(ref, contractKey)
 			return []any{gv, gl}, []any{wv, wl}
 		}},
-		{"Delete", func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		{name: "Delete", do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			m.Delete(contractKey)
 			delete(ref, contractKey)
 			return nil, nil
 		}},
-		{"Swap", func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		{name: "Swap", do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			gv, gl := m.Swap(contractKey, a.nw)
 			wv, wl := ref[contractKey]
 			ref[contractKey] = a.nw
@@ -311,24 +311,24 @@ func valueContractOps[V any]() []contractOp[V] {
 		cad("CompareAndDelete equal copy", eq),
 		cad("CompareAndDelete wrong old", wrong),
 		cad("CompareAndDelete peer old", peer),
-		{"Range", func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		{name: "Range", do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			got := map[string]V{}
 			n := 0
 			m.Range(func(k string, v V) bool { got[k] = v; n++; return true })
 			return []any{got, n}, []any{maps.Clone(ref), len(ref)}
 		}},
-		{"Clear", func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		{name: "Clear", do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			m.Clear()
 			clear(ref)
 			return nil, nil
 		}},
-		{"Len", func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		{name: "Len", do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			return []any{m.Len()}, []any{len(ref)}
 		}},
-		{"Size", func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		{name: "Size", do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			return []any{m.Size() > 0}, []any{true}
 		}},
-		{"InitReserve", func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
+		{name: "InitReserve", do: func(m *gache.Map[string, V], ref map[string]V, a contractArgs[V]) ([]any, []any) {
 			m.InitReserve(64) // pre-sizes an empty map and is a no-op otherwise
 			return nil, nil
 		}},
@@ -507,8 +507,8 @@ func TestMap_Contract(t *testing.T) {
 
 // pointerOp is one Pointer-API op; got and want are compared by identity.
 type pointerOp struct {
-	name string
 	do   func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) (got, want []any)
+	name string
 }
 
 type pointerArgs struct{ cur, copy, p2, other *int }
@@ -525,7 +525,7 @@ func refSetPtr(ref map[string]*int, p *int) {
 
 func pointerOps() []pointerOp {
 	cas := func(name string, old func(pointerArgs) *int, nw func(pointerArgs) *int) pointerOp {
-		return pointerOp{name, func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
+		return pointerOp{name: name, do: func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
 			o, n := old(a), nw(a)
 			got := m.CompareAndSwapPointer(contractKey, o, n)
 			cur, ok := ref[contractKey]
@@ -543,14 +543,14 @@ func pointerOps() []pointerOp {
 	p2 := func(a pointerArgs) *int { return a.p2 }
 
 	store := func(name string, p func(pointerArgs) *int) pointerOp {
-		return pointerOp{name, func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
+		return pointerOp{name: name, do: func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
 			m.StorePointer(contractKey, p(a))
 			refSetPtr(ref, p(a))
 			return nil, nil
 		}}
 	}
 	loadOrStore := func(name string, p func(pointerArgs) *int) pointerOp {
-		return pointerOp{name, func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
+		return pointerOp{name: name, do: func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
 			gp, gl := m.LoadOrStorePointer(contractKey, p(a))
 			if c, ok := ref[contractKey]; ok {
 				return []any{gp, gl}, []any{c, true}
@@ -560,7 +560,7 @@ func pointerOps() []pointerOp {
 		}}
 	}
 	swap := func(name string, p func(pointerArgs) *int) pointerOp {
-		return pointerOp{name, func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
+		return pointerOp{name: name, do: func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
 			gp, gl := m.SwapPointer(contractKey, p(a))
 			wp, wl := ref[contractKey]
 			refSetPtr(ref, p(a))
@@ -569,7 +569,7 @@ func pointerOps() []pointerOp {
 	}
 
 	return []pointerOp{
-		{"LoadPointer", func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
+		{name: "LoadPointer", do: func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
 			gp, gok := m.LoadPointer(contractKey)
 			wp, wok := ref[contractKey]
 			return []any{gp, gok}, []any{wp, wok}
@@ -580,7 +580,7 @@ func pointerOps() []pointerOp {
 		loadOrStore("LoadOrStorePointer nil", nilp),
 		swap("SwapPointer", p2),
 		swap("SwapPointer nil deletes", nilp),
-		{"LoadAndDeletePointer", func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
+		{name: "LoadAndDeletePointer", do: func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
 			gp, gl := m.LoadAndDeletePointer(contractKey)
 			wp, wl := ref[contractKey]
 			delete(ref, contractKey)
@@ -591,7 +591,7 @@ func pointerOps() []pointerOp {
 		cas("CompareAndSwapPointer equal content, other pointer", cp, p2),
 		cas("CompareAndSwapPointer nil old", nilp, p2),
 		cas("CompareAndSwapPointer unrelated old", other, p2),
-		{"RangePointer", func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
+		{name: "RangePointer", do: func(m *gache.Map[string, int], ref map[string]*int, a pointerArgs) ([]any, []any) {
 			got := map[string]*int{}
 			m.RangePointer(func(k string, p *int) bool { got[k] = p; return true })
 			var gs, ws []any
@@ -1071,9 +1071,9 @@ func TestMap_ExpungedVariousTypes(t *testing.T) {
 	})
 
 	type BigStruct struct {
-		arr [1000]int64
-		p   *int
-		m   map[string]int
+		p *int
+		_ map[string]int
+		_ [1000]int64
 	}
 	t.Run("BigStruct", func(t *testing.T) {
 		testMapExpungeGC[BigStruct](t, BigStruct{p: &i1}, BigStruct{p: &i2})

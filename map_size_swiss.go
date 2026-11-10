@@ -210,7 +210,7 @@ func typeHasPointers[T any]() bool {
 //	tombstonePossible bool           offset 35
 //	(4 bytes implicit padding)
 //	clearSeq          uint64         offset 40
-type hmap struct {
+type hmap struct { //nolint:govet // fieldalignment: field order mirrors internal/runtime/maps Map and must not be reordered
 	used              uint64
 	seed              uintptr
 	dirPointer        unsafe.Pointer
@@ -235,7 +235,7 @@ type hmap struct {
 //	(1 byte implicit padding)
 //	index      int            offset  8
 //	groups     groupsRef      offset 16
-type tableHdr struct {
+type tableHdr struct { //nolint:govet // fieldalignment: field order mirrors internal/runtime/maps table and must not be reordered
 	used       uint16
 	capacity   uint16
 	growthLeft uint16
@@ -247,13 +247,15 @@ type tableHdr struct {
 
 // groupsRef mirrors internal/runtime/maps.groupsReference.
 // Keep in sync with internal/runtime/maps/group.go.
-type groupsRef struct {
+type groupsRef struct { //nolint:govet // fieldalignment: field order mirrors internal/runtime/maps groupsReference and must not be reordered
 	data       unsafe.Pointer // *[lengthMask+1]group
 	lengthMask uint64         // numGroups - 1 (numGroups is always a power of 2)
 }
 
-// mapSize estimates the number of bytes owned by the SwissTable map's
-// internal structures.
+// mapSizeScan estimates the number of bytes owned by the SwissTable map's
+// internal structures, for a caller that knows slotScan, whether a slot (a K
+// and a V) has pointers: a shardMap's buckets hold *valueOf values, so their
+// slots always do.
 //
 // Group layout (conceptually, from internal/runtime/maps/group.go):
 //
@@ -265,36 +267,23 @@ type groupsRef struct {
 // SlotSize is modeled as sizeof(struct{ key K; elem V }) computed by the
 // compiler using Go's usual struct layout rules. The actual runtime swissmap
 // implementation may apply additional optimizations (for example, special-
-// casing zero-sized values), so mapSize should be understood as an
-// approximation/upper bound of the bytes owned by the map rather than an
-// exact reflection of every internal optimization.
-func mapSize[K comparable, V any](m map[K]V) uintptr {
-	return mapSizeScan(m, typeHasPointers[struct {
-		key  K
-		elem V
-	}]())
-}
-
-// mapSizeScan is mapSize for a caller that knows slotScan, whether a slot (a K
-// and a V) has pointers, without reading the type descriptor: a shardMap's
-// buckets hold *valueOf values, so their slots always do.
+// casing zero-sized values), so the result is an approximation/upper bound of
+// the bytes owned by the map rather than an exact reflection of every internal
+// optimization.
 func mapSizeScan[K comparable, V any](m map[K]V, slotScan bool) uintptr {
 	if m == nil {
 		return 0
 	}
 
 	h := (*hmap)(*(*unsafe.Pointer)(unsafe.Pointer(&m)))
-	if h == nil {
-		return 0
-	}
 
 	type slot struct {
-		key  K
-		elem V
+		_ K
+		_ V
 	}
 	type group struct {
-		slots [8]slot
-		ctrl  uint64
+		_ [8]slot
+		_ uint64
 	}
 
 	groupSize := unsafe.Sizeof(group{})

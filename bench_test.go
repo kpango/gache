@@ -560,7 +560,7 @@ func BenchmarkGache_SetIfNotExists(b *testing.B) {
 	})
 }
 
-// BenchmarkGache_ToMap measures the performance and memory footprint of cloning the entire cache into a a *sync.Map (ToMap).
+// BenchmarkGache_ToMap measures the performance and memory footprint of cloning the entire cache into a *sync.Map (ToMap).
 func BenchmarkGache_ToMap(b *testing.B) {
 	b.ReportAllocs()
 	gc := gache.New[int]()
@@ -1389,18 +1389,18 @@ func BenchmarkGache_Delete(b *testing.B) {
 func BenchmarkGache_Iterate(b *testing.B) {
 	ctx := context.Background()
 	ops := []struct {
-		name string
 		run  func(g gache.Gache[int])
+		name string
 	}{
-		{"Keys", func(g gache.Gache[int]) { iterSink.Add(int64(len(g.Keys(ctx)))) }},
-		{"Values", func(g gache.Gache[int]) { iterSink.Add(int64(len(g.Values(ctx)))) }},
-		{"ToMap", func(g gache.Gache[int]) {
+		{name: "Keys", run: func(g gache.Gache[int]) { iterSink.Add(int64(len(g.Keys(ctx)))) }},
+		{name: "Values", run: func(g gache.Gache[int]) { iterSink.Add(int64(len(g.Values(ctx)))) }},
+		{name: "ToMap", run: func(g gache.Gache[int]) {
 			if g.ToMap(ctx) == nil {
 				iterSink.Add(1)
 			}
 		}},
-		{"ToRawMap", func(g gache.Gache[int]) { iterSink.Add(int64(len(g.ToRawMap(ctx)))) }},
-		{"Range", func(g gache.Gache[int]) {
+		{name: "ToRawMap", run: func(g gache.Gache[int]) { iterSink.Add(int64(len(g.ToRawMap(ctx)))) }},
+		{name: "Range", run: func(g gache.Gache[int]) {
 			// f writes nothing shared: gache.Range calls it from several fan-out
 			// workers, and a shared counter would add contention to the measurement.
 			g.Range(ctx, func(string, int, int64) bool { return true })
@@ -1630,10 +1630,10 @@ func matrixKeyTable(n int) []string {
 type matrixWork struct {
 	fill      func(rng *rand.Rand, ring []cacheOp, n int)
 	name      string
+	skip      string // impl this workload does not apply to
 	keys      int
 	ttl       time.Duration // > 0: mxSetTTL uses it and gache's expiry daemon runs
 	gacheOnly bool
-	skip      string // impl this workload does not apply to
 }
 
 func fillRW(readPct int) func(*rand.Rand, []cacheOp, int) {

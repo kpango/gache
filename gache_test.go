@@ -71,11 +71,12 @@ func entryStates[V comparable]() []entryState[V] {
 
 // cell is one (value kind, entry state) pair with a cache in that state.
 type cell[V comparable] struct {
-	t    *testing.T
-	g    gache.Gache[V]
-	st   entryState[V]
-	k    string
-	a, b V
+	g  gache.Gache[V]
+	a  V
+	b  V
+	t  *testing.T
+	k  string
+	st entryState[V]
 }
 
 // want is the value Get must report and whether it must report one.
@@ -165,13 +166,13 @@ func (c *cell[V]) checkSnapshots() {
 // cellOp is one Gache[V] method (or method variant) applied to a cell, with its
 // expectations for every entry state.
 type cellOp[V comparable] struct {
-	name string
 	run  func(c *cell[V])
+	name string
 }
 
 func contractOps[V comparable]() []cellOp[V] {
 	getRefreshWithDur := func(name string, d time.Duration, checkTTL func(c *cell[V])) cellOp[V] {
-		return cellOp[V]{name, func(c *cell[V]) {
+		return cellOp[V]{name: name, run: func(c *cell[V]) {
 			wantV, wantOK := c.want()
 			if v, ok := c.g.GetRefreshWithDur(c.k, d); ok != wantOK || (ok && v != wantV) {
 				c.t.Fatalf("GetRefreshWithDur = (%v, %v), want (%v, %v)", v, ok, wantV, wantOK)
@@ -184,7 +185,7 @@ func contractOps[V comparable]() []cellOp[V] {
 	// setIfNotExists: a live entry keeps its value and expire; otherwise b is stored
 	// with the TTL that checkTTL asserts.
 	setIfNotExists := func(name string, set func(c *cell[V]), checkTTL func(c *cell[V])) cellOp[V] {
-		return cellOp[V]{name, func(c *cell[V]) {
+		return cellOp[V]{name: name, run: func(c *cell[V]) {
 			var before int64
 			if c.st.live {
 				before = c.expire("before")
@@ -202,7 +203,7 @@ func contractOps[V comparable]() []cellOp[V] {
 		}}
 	}
 	return []cellOp[V]{
-		{"Get", func(c *cell[V]) {
+		{name: "Get", run: func(c *cell[V]) {
 			v, ok := c.want()
 			c.mustGet("Get", v, ok)
 			// Get evicts an expired entry, so nothing stays behind.
@@ -213,14 +214,14 @@ func contractOps[V comparable]() []cellOp[V] {
 				c.t.Fatalf("GetWithIgnoredExpire after Get = %v, want %v (Get evicts an expired entry)", ok, c.st.live)
 			}
 		}},
-		{"GetWithExpire", func(c *cell[V]) {
+		{name: "GetWithExpire", run: func(c *cell[V]) {
 			wantV, wantOK := c.want()
 			v, e, ok := c.g.GetWithExpire(c.k)
 			if ok != wantOK || (ok && (v != wantV || (e > 0) != c.st.ttl)) {
 				c.t.Fatalf("GetWithExpire = (%v, %d, %v), want (%v, TTL=%v, %v)", v, e, ok, wantV, c.st.ttl, wantOK)
 			}
 		}},
-		{"GetWithIgnoredExpire", func(c *cell[V]) {
+		{name: "GetWithIgnoredExpire", run: func(c *cell[V]) {
 			v, ok := c.g.GetWithIgnoredExpire(c.k)
 			wantV, _ := c.want()
 			if c.st.stale {
@@ -230,7 +231,7 @@ func contractOps[V comparable]() []cellOp[V] {
 				c.t.Fatalf("GetWithIgnoredExpire = (%v, %v), want (%v, %v)", v, ok, wantV, wantOK)
 			}
 		}},
-		{"GetRefresh", func(c *cell[V]) {
+		{name: "GetRefresh", run: func(c *cell[V]) {
 			wantV, wantOK := c.want()
 			if v, ok := c.g.GetRefresh(c.k); ok != wantOK || (ok && v != wantV) {
 				c.t.Fatalf("GetRefresh = (%v, %v), want (%v, %v)", v, ok, wantV, wantOK)
@@ -243,7 +244,7 @@ func contractOps[V comparable]() []cellOp[V] {
 		}},
 		getRefreshWithDur("GetRefreshWithDur NoTTL", gache.NoTTL, func(c *cell[V]) { c.mustNotExpire("GetRefreshWithDur(NoTTL)") }),
 		getRefreshWithDur("GetRefreshWithDur 2h", 2*time.Hour, func(c *cell[V]) { c.mustExpireAfter("GetRefreshWithDur(2h)", 90*time.Minute) }),
-		{"ExtendExpire", func(c *cell[V]) {
+		{name: "ExtendExpire", run: func(c *cell[V]) {
 			var before int64
 			if c.st.live {
 				before = c.expire("before")
@@ -260,7 +261,7 @@ func contractOps[V comparable]() []cellOp[V] {
 				c.mustNotExpire("ExtendExpire on an entry without TTL")
 			}
 		}},
-		{"Pop", func(c *cell[V]) {
+		{name: "Pop", run: func(c *cell[V]) {
 			wantV, wantOK := c.want()
 			if v, ok := c.g.Pop(c.k); ok != wantOK || (ok && v != wantV) {
 				c.t.Fatalf("Pop = (%v, %v), want (%v, %v)", v, ok, wantV, wantOK)
@@ -270,7 +271,7 @@ func contractOps[V comparable]() []cellOp[V] {
 				c.t.Fatalf("Len after Pop = %d, want 0", n)
 			}
 		}},
-		{"Delete", func(c *cell[V]) {
+		{name: "Delete", run: func(c *cell[V]) {
 			wantV, wantOK := c.want()
 			v, loaded := c.g.Delete(c.k)
 			if (c.st.live && (!loaded || v != wantV)) || (!c.st.live && !c.st.stale && loaded) {
@@ -284,7 +285,7 @@ func contractOps[V comparable]() []cellOp[V] {
 				c.t.Fatalf("Len after Delete = %d, want 0", n)
 			}
 		}},
-		{"Set", func(c *cell[V]) {
+		{name: "Set", run: func(c *cell[V]) {
 			c.g.Set(c.k, c.b)
 			c.mustGet("Set", c.b, true)
 			c.mustExpireAfter("Set (default TTL 30s)", 20*time.Second)
@@ -292,26 +293,26 @@ func contractOps[V comparable]() []cellOp[V] {
 				c.t.Fatalf("Len after Set = %d, want 1", n)
 			}
 		}},
-		{"SetWithExpire NoTTL", func(c *cell[V]) {
+		{name: "SetWithExpire NoTTL", run: func(c *cell[V]) {
 			c.g.SetWithExpire(c.k, c.b, gache.NoTTL)
 			c.mustGet("SetWithExpire", c.b, true)
 			c.mustNotExpire("SetWithExpire(NoTTL)")
 		}},
 		// The same value again with a new TTL: it must refresh the expiry of a live
 		// entry and revive an expired one (the lock-free same-value path of store).
-		{"SetWithExpire zero and negative TTL", func(c *cell[V]) {
+		{name: "SetWithExpire zero and negative TTL", run: func(c *cell[V]) {
 			for _, d := range []time.Duration{0, -10 * time.Minute} {
 				c.g.SetWithExpire(c.k, c.b, d)
 				c.mustGet("SetWithExpire", c.b, true)
 				c.mustNotExpire(fmt.Sprintf("SetWithExpire(%v)", d))
 			}
 		}},
-		{"SetWithExpire same value", func(c *cell[V]) {
+		{name: "SetWithExpire same value", run: func(c *cell[V]) {
 			c.g.SetWithExpire(c.k, c.a, 2*time.Hour)
 			c.mustGet("SetWithExpire(a)", c.a, true)
 			c.mustExpireAfter("SetWithExpire(a, 2h)", 90*time.Minute)
 		}},
-		{"SetWithExpire same value NoTTL", func(c *cell[V]) {
+		{name: "SetWithExpire same value NoTTL", run: func(c *cell[V]) {
 			c.g.SetWithExpire(c.k, c.a, gache.NoTTL)
 			c.mustGet("SetWithExpire(a)", c.a, true)
 			c.mustNotExpire("SetWithExpire(a, NoTTL)")
@@ -322,13 +323,13 @@ func contractOps[V comparable]() []cellOp[V] {
 		setIfNotExists("SetWithExpireIfNotExists",
 			func(c *cell[V]) { c.g.SetWithExpireIfNotExists(c.k, c.b, 2*time.Hour) },
 			func(c *cell[V]) { c.mustExpireAfter("SetWithExpireIfNotExists(2h)", 90*time.Minute) }),
-		{"Range Keys Values ToRawMap ToMap", func(c *cell[V]) {
+		{name: "Range Keys Values ToRawMap ToMap", run: func(c *cell[V]) {
 			c.checkSnapshots()
 			if n := c.g.Len(); n != c.wantLen() && !c.st.stale {
 				c.t.Fatalf("Len = %d, want %d", n, c.wantLen())
 			}
 		}},
-		{"DeleteExpired", func(c *cell[V]) {
+		{name: "DeleteExpired", run: func(c *cell[V]) {
 			want := uint64(0)
 			if c.st.stale {
 				want = 1
@@ -342,7 +343,7 @@ func contractOps[V comparable]() []cellOp[V] {
 			wantV, wantOK := c.want()
 			c.mustGet("after DeleteExpired", wantV, wantOK)
 		}},
-		{"Clear", func(c *cell[V]) {
+		{name: "Clear", run: func(c *cell[V]) {
 			c.g.Clear()
 			c.mustGet("after Clear", c.a, false)
 			if _, ok := c.g.GetWithIgnoredExpire(c.k); ok || c.g.Len() != 0 {
@@ -1354,14 +1355,14 @@ func churnAllOps(g gache.Gache[string], keys []string, goroutines int, d time.Du
 func TestGache_ChurnKeepsLenConsistent(t *testing.T) {
 	tests := []struct {
 		name       string
-		opts       []gache.Option[string]
 		keyFmt     string
+		opts       []gache.Option[string]
 		numKeys    int
 		goroutines int
 	}{
-		{"MaxKeyLength=8", []gache.Option[string]{gache.WithMaxKeyLength[string](8)}, "prefix__key_%04d", 40, 120},
-		{"MaxKeyLength=4 one shard", []gache.Option[string]{gache.WithMaxKeyLength[string](4)}, "aaaa_colliding_key_%02d", 30, 120},
-		{"default hashing", nil, "k_%d", 800, 16},
+		{name: "MaxKeyLength=8", opts: []gache.Option[string]{gache.WithMaxKeyLength[string](8)}, keyFmt: "prefix__key_%04d", numKeys: 40, goroutines: 120},
+		{name: "MaxKeyLength=4 one shard", opts: []gache.Option[string]{gache.WithMaxKeyLength[string](4)}, keyFmt: "aaaa_colliding_key_%02d", numKeys: 30, goroutines: 120},
+		{name: "default hashing", opts: nil, keyFmt: "k_%d", numKeys: 800, goroutines: 16},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

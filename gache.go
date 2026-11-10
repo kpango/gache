@@ -74,12 +74,12 @@ type (
 		shards         [slen]*shardMap[string, V]
 		cancel         atomic.Pointer[context.CancelFunc]
 		expChan        chan kv[V]
-		expOnce        sync.Once
 		expFunc        atomic.Pointer[func(context.Context, string, V)]
-		expFuncEnabled atomic.Bool
 		expire         int64
 		maxKeyLength   uint64
 		maxWorkers     int
+		expOnce        sync.Once
+		expFuncEnabled atomic.Bool
 	}
 
 	kv[V any] struct {
@@ -516,18 +516,16 @@ func gatherDirect[V any, T any](
 				break
 			}
 			if withValue {
-				shard.rangeShardVal(now, func(k string, val V, _ int64) bool {
+				shard.rangeShardVal(now, func(k string, val V, _ int64) {
 					chunk = append(chunk, extract(k, val))
-					return true
 				})
 			} else {
-				shard.rangeShard(func(k string, v *value[string, V]) bool {
+				shard.rangeShard(func(k string, v *value[string, V]) {
 					if exp := v.exp().Load(); exp > 0 && now > exp {
-						return true
+						return
 					}
 					var zero V
 					chunk = append(chunk, extract(k, zero))
-					return true
 				})
 			}
 		}

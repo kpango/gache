@@ -1331,9 +1331,9 @@ func TestGache_TTLLessEntrySurvivesRefresh(t *testing.T) {
 	// setup stores "k" and returns the expire the entry must keep; op is the call
 	// under test and reports whether it found the entry.
 	type tc struct {
-		name  string
 		setup func(g *gache[string]) (wantExpire int64)
 		op    func(g *gache[string]) (ok bool)
+		name  string
 	}
 	var tests []tc
 	for _, ttl := range []time.Duration{NoTTL, 0} {
@@ -1630,10 +1630,7 @@ func TestGache_AbsentLookupsKeepExistingKey(t *testing.T) {
 // the oracle Len is compared with.
 func countShards[V any](g *gache[V]) (n int) {
 	for i := range g.shards {
-		g.shards[i].rangeShard(func(string, *value[string, V]) bool {
-			n++
-			return true
-		})
+		g.shards[i].rangeShard(func(string, *value[string, V]) { n++ })
 	}
 	return n
 }

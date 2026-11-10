@@ -16,51 +16,51 @@ func TestOption_Fields(t *testing.T) {
 
 	hook := func(context.Context, string, int) {}
 	tests := []struct {
+		check func(t *testing.T, g *gache[int])
 		name  string
 		opts  []Option[int]
-		check func(t *testing.T, g *gache[int])
 	}{
-		{"defaults", nil, func(t *testing.T, g *gache[int]) {
+		{name: "defaults", opts: nil, check: func(t *testing.T, g *gache[int]) {
 			if g.expire != int64(30*time.Second) || g.maxKeyLength != 256 || g.maxWorkers != runtime.NumCPU()*2 || g.expFuncEnabled.Load() {
 				t.Errorf("defaults = expire %d, maxKeyLength %d, maxWorkers %d, hook enabled %v", g.expire, g.maxKeyLength, g.maxWorkers, g.expFuncEnabled.Load())
 			}
 		}},
-		{"WithDefaultExpiration", []Option[int]{WithDefaultExpiration[int](time.Hour)}, func(t *testing.T, g *gache[int]) {
+		{name: "WithDefaultExpiration", opts: []Option[int]{WithDefaultExpiration[int](time.Hour)}, check: func(t *testing.T, g *gache[int]) {
 			if g.expire != int64(time.Hour) {
 				t.Errorf("expire = %d, want %d", g.expire, int64(time.Hour))
 			}
 		}},
-		{"WithDefaultExpirationString", []Option[int]{WithDefaultExpirationString[int]("5m")}, func(t *testing.T, g *gache[int]) {
+		{name: "WithDefaultExpirationString", opts: []Option[int]{WithDefaultExpirationString[int]("5m")}, check: func(t *testing.T, g *gache[int]) {
 			if g.expire != int64(5*time.Minute) {
 				t.Errorf("expire = %d, want %d", g.expire, int64(5*time.Minute))
 			}
 		}},
-		{"WithExpiredHookFunc", []Option[int]{WithExpiredHookFunc(hook)}, func(t *testing.T, g *gache[int]) {
+		{name: "WithExpiredHookFunc", opts: []Option[int]{WithExpiredHookFunc(hook)}, check: func(t *testing.T, g *gache[int]) {
 			if g.expFunc.Load() == nil || !g.expFuncEnabled.Load() {
 				t.Errorf("hook set = %v, enabled = %v, want both", g.expFunc.Load() != nil, g.expFuncEnabled.Load())
 			}
 		}},
-		{"WithExpiredHookFunc nil is ignored", []Option[int]{WithExpiredHookFunc[int](nil)}, func(t *testing.T, g *gache[int]) {
+		{name: "WithExpiredHookFunc nil is ignored", opts: []Option[int]{WithExpiredHookFunc[int](nil)}, check: func(t *testing.T, g *gache[int]) {
 			if g.expFunc.Load() != nil || g.expFuncEnabled.Load() {
 				t.Error("a nil hook was installed")
 			}
 		}},
-		{"WithMaxKeyLength", []Option[int]{WithMaxKeyLength[int](8)}, func(t *testing.T, g *gache[int]) {
+		{name: "WithMaxKeyLength", opts: []Option[int]{WithMaxKeyLength[int](8)}, check: func(t *testing.T, g *gache[int]) {
 			if g.maxKeyLength != 8 {
 				t.Errorf("maxKeyLength = %d, want 8", g.maxKeyLength)
 			}
 		}},
-		{"WithMaxKeyLength 0 is no limit", []Option[int]{WithMaxKeyLength[int](0)}, func(t *testing.T, g *gache[int]) {
+		{name: "WithMaxKeyLength 0 is no limit", opts: []Option[int]{WithMaxKeyLength[int](0)}, check: func(t *testing.T, g *gache[int]) {
 			if g.maxKeyLength != 0 {
 				t.Errorf("maxKeyLength = %d, want 0", g.maxKeyLength)
 			}
 		}},
-		{"WithMaxWorkers", []Option[int]{WithMaxWorkers[int](3)}, func(t *testing.T, g *gache[int]) {
+		{name: "WithMaxWorkers", opts: []Option[int]{WithMaxWorkers[int](3)}, check: func(t *testing.T, g *gache[int]) {
 			if g.maxWorkers != 3 {
 				t.Errorf("maxWorkers = %d, want 3", g.maxWorkers)
 			}
 		}},
-		{"later options win", []Option[int]{WithMaxWorkers[int](3), WithMaxWorkers[int](5), WithMaxKeyLength[int](4), WithMaxKeyLength[int](9)}, func(t *testing.T, g *gache[int]) {
+		{name: "later options win", opts: []Option[int]{WithMaxWorkers[int](3), WithMaxWorkers[int](5), WithMaxKeyLength[int](4), WithMaxKeyLength[int](9)}, check: func(t *testing.T, g *gache[int]) {
 			if g.maxWorkers != 5 || g.maxKeyLength != 9 {
 				t.Errorf("maxWorkers = %d, maxKeyLength = %d, want 5 and 9", g.maxWorkers, g.maxKeyLength)
 			}

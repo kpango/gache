@@ -15,12 +15,12 @@ import (
 	"unsafe"
 )
 
-type refGroupsRef struct {
+type refGroupsRef struct { //nolint:govet // fieldalignment: field order mirrors internal/runtime/maps groupsReference and must not be reordered
 	data       unsafe.Pointer
 	lengthMask uint64
 }
 
-type refTableHdr struct {
+type refTableHdr struct { //nolint:govet // fieldalignment: field order mirrors internal/runtime/maps table and must not be reordered
 	used       uint16
 	capacity   uint16
 	growthLeft uint16
@@ -30,7 +30,7 @@ type refTableHdr struct {
 	groups     refGroupsRef
 }
 
-type refHmap struct {
+type refHmap struct { //nolint:govet // fieldalignment: field order mirrors internal/runtime/maps Map and must not be reordered
 	used              uint64
 	seed              uintptr
 	dirPointer        unsafe.Pointer
@@ -43,6 +43,14 @@ type refHmap struct {
 	clearSeq          uint64
 }
 
+// mapSize is mapSizeScan with the slot's pointer-ness read from the type descriptor.
+func mapSize[K comparable, V any](m map[K]V) uintptr {
+	return mapSizeScan(m, typeHasPointers[struct {
+		_ K
+		_ V
+	}]())
+}
+
 // groupSizeFor returns the size of one swissmap group for (K, V) independently
 // of mapSize, mirroring the group layout from internal/runtime/maps/group.go:
 //
@@ -52,12 +60,12 @@ type refHmap struct {
 //	}
 func groupSizeFor[K comparable, V any]() uintptr {
 	type slot struct {
-		key  K
-		elem V
+		_ K
+		_ V
 	}
 	type group struct {
-		slots [8]slot
-		ctrl  uint64
+		_ [8]slot
+		_ uint64
 	}
 	return unsafe.Sizeof(group{})
 }
@@ -359,6 +367,16 @@ func TestMap_SizeSwiss_NilAndEmpty(t *testing.T) {
 	}
 }
 
+// TestMap_Size_NilReceiver: Size of a nil *Map is 0 rather than a nil dereference.
+func TestMap_Size_NilReceiver(t *testing.T) {
+	t.Parallel()
+
+	var m *Map[string, int]
+	if got := m.Size(); got != 0 {
+		t.Fatalf("nil Map Size = %d, want 0", got)
+	}
+}
+
 // TestMap_SizeSwiss_SmallMap_DirectGroup: a 4-entry map (one direct group, no directory) is sized like the internals reference.
 func TestMap_SizeSwiss_SmallMap_DirectGroup(t *testing.T) {
 	t.Parallel()
@@ -504,7 +522,7 @@ func TestSize_MapLowerBound(t *testing.T) {
 		unsafe.Sizeof(gacheMap.m.misses) +
 		mapSize(gacheMap.m.dirty)
 
-	// Allow for some slack due to readOnlyShard struct and node sizes
+	// Allow for some slack due to readOnlyShardOf struct and node sizes
 
 	if size < expectedSize {
 		t.Errorf("gacheMap.Size() %d is smaller than expected lower bound %d", size, expectedSize)
@@ -796,12 +814,12 @@ func refHasPointers(t reflect.Type) bool {
 func TestSize_TypeHasPointers(t *testing.T) {
 	// Not parallel: testing.AllocsPerRun needs a quiet process.
 	type noPtr struct {
-		a int64
-		b [3]int32
+		_ int64
+		_ [3]int32
 	}
 	type withPtr struct {
-		a int64
-		p *int
+		_ *int
+		_ int64
 	}
 	check := func(name string, got bool, typ reflect.Type) {
 		if want := refHasPointers(typ); got != want {
@@ -857,7 +875,7 @@ func sizeNodes[K comparable, V any](t *testing.T, m *shardMap[K, V]) int {
 	m.mu.Lock()
 	fixed := unsafe.Sizeof(*m) + mapSize(m.loadReadOnly().m) + mapSize(m.dirty)
 	if m.read.Load() != nil {
-		fixed += allocSize(unsafe.Sizeof(readOnlyShard[K, V]{}), true)
+		fixed += allocSize(unsafe.Sizeof(readOnlyShardOf[K, V, atomic.Pointer[V], atomic.Int64]{}), true)
 	}
 	if m.l.Load() != nil {
 		fixed += allocSize(unsafe.Sizeof(atomic.Int64{}), false)
@@ -1031,7 +1049,7 @@ func TestSize_GacheSameHashChains(t *testing.T) {
 }
 
 // expectedMapSize recomputes Map.Size() from the shardMap structure: the struct
-// itself, the length counter, the readOnlyShard header, both bucket maps, the
+// itself, the length counter, the readOnlyShardOf header, both bucket maps, the
 // nodes and the boxed value of every live entry, each heap object rounded by
 // allocSize. Nodes are shared between the
 // read snapshot and the dirty map and charged once, from the structure that holds

@@ -1,7 +1,6 @@
 package gache
 
 import (
-	"reflect"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -20,7 +19,7 @@ const (
 	stDeleted  uint64 = 1 // tombstoned; revivable in place under n.mu
 	stExpunged uint64 = 2 // dropped from dirty for good; never revived
 	stMask     uint64 = 3
-	// stPtr marks a word-sized V that holds a pointer (hasPointers). Its payload
+	// stPtr marks a word-sized V that holds a pointer (typeHasPointers). Its payload
 	// word must be written with a barriered pointer store, a plain uint64 store is
 	// invisible to the GC.
 	stPtr uint64 = 1 << 2
@@ -162,8 +161,8 @@ func (m *shardMapOf[K, V, P, E]) empty() bool {
 // in-place mutation and tombstoning are visible through both views.
 //
 // P and E select whether a node carries valPtr and expire. gache instantiates
-// them as atomic.Pointer[V] and atomic.Int64 (the shardMap, value and
-// readOnlyShard aliases below), Map as struct{}: its V is a pointer, so valPtr
+// them as atomic.Pointer[V] and atomic.Int64 (the shardMap and value
+// aliases below), Map as struct{}: its V is a pointer, so valPtr
 // is never used, and its entries never expire. The two zero-size fields take
 // 16 bytes off a Map node (56 -> 40 for an int key, the 48-byte size class
 // instead of 64) and leave gache's node layout unchanged.
@@ -184,12 +183,11 @@ type (
 	expireSlot        interface{ atomic.Int64 | struct{} }
 )
 
-// shardMap, value and readOnlyShard are gache's instantiation, with valPtr and
+// shardMap and value are gache's instantiation, with valPtr and
 // expire.
 type (
-	shardMap[K comparable, V any]      = shardMapOf[K, V, atomic.Pointer[V], atomic.Int64]
-	value[K comparable, V any]         = valueOf[K, V, atomic.Pointer[V], atomic.Int64]
-	readOnlyShard[K comparable, V any] = readOnlyShardOf[K, V, atomic.Pointer[V], atomic.Int64]
+	shardMap[K comparable, V any] = shardMapOf[K, V, atomic.Pointer[V], atomic.Int64]
+	value[K comparable, V any]    = valueOf[K, V, atomic.Pointer[V], atomic.Int64]
 )
 
 // vp returns the valPtr field as the atomic.Pointer[V] it is when P is not
@@ -253,35 +251,14 @@ func newValue[K comparable, V any, P valPtrSlot[V], E expireSlot](k K, val V, ex
 	}
 	if unsafe.Sizeof(val) != wordSize {
 		n.vp().Store(&n.val)
-	} else if hasPointers(reflect.TypeFor[V]()) {
+	} else if typeHasPointers[V]() {
+		// For a word-sized V the word is a pointer exactly when PtrBytes != 0
+		// (pointers are word-sized and word-aligned, so any pointer in V fills
+		// the whole word). typeHasPointers reads PtrBytes without allocating,
+		// unlike a reflect walk, which this insert path must not pay.
 		n.state.Store(stPtr)
 	}
 	return n
-}
-
-// hasPointers reports whether a value of type t contains pointers the GC must
-// see. For a word-sized t that means the whole word is a pointer (pointers are
-// word-aligned and word-sized): a pointer, map, chan, func or unsafe.Pointer, or
-// a struct or array wrapping one. Strings, slices and interfaces are never
-// word-sized, so reaching the default case for one is harmless.
-func hasPointers(t reflect.Type) bool {
-	switch t.Kind() {
-	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
-		reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128:
-		return false
-	case reflect.Array:
-		return t.Len() > 0 && hasPointers(t.Elem())
-	case reflect.Struct:
-		for field := range t.Fields() {
-			if hasPointers(field.Type) {
-				return true
-			}
-		}
-		return false
-	default:
-		return true
-	}
 }
 
 // live reports whether n currently holds a published entry.
@@ -800,7 +777,11 @@ func (m *shardMapOf[K, V, P, E]) popSlow(h uint64, k K, cond func(V) bool) (val 
 // with tombstone, the node-level step (tombstoneIf or tombstoneIfExpired). The step
 // runs under n.mu and reports the value and expire of the node it tombstoned, loaded
 // when it did, and live when the node was live at all. The step does not escape.
-func (m *shardMapOf[K, V, P, E]) evictSlow(h uint64, k K, tombstone func(n *valueOf[K, V, P, E], c *atomic.Int64, expunge bool) (val V, expire int64, loaded, live bool)) (val V, expire int64, loaded bool) {
+func (m *shardMapOf[K, V, P, E]) evictSlow(
+	h uint64,
+	k K,
+	tombstone func(n *valueOf[K, V, P, E], c *atomic.Int64, expunge bool) (val V, expire int64, loaded, live bool),
+) (val V, expire int64, loaded bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	read := m.loadReadOnly()
@@ -908,9 +889,6 @@ func (m *shardMapOf[K, V, P, E]) promoteLocked() {
 // are unlinked in-place atomically (their own next stays intact for readers
 // standing on them).
 func (m *shardMapOf[K, V, P, E]) dirtyLocked() {
-	if m.dirty != nil {
-		return
-	}
 	read := m.loadReadOnly()
 	m.dirty = make(map[uint64]*valueOf[K, V, P, E], len(read.m))
 	m.chained = 0
@@ -962,14 +940,11 @@ func (m *shardMapOf[K, V, P, E]) readSnapshot() readOnlyShardOf[K, V, P, E] {
 // rangeShard iterates the read snapshot's chains, skipping dead nodes, and
 // calls f with the original key and the node. If the snapshot is amended, it is
 // promoted first so all keys are observable.
-func (m *shardMapOf[K, V, P, E]) rangeShard(f func(k K, n *valueOf[K, V, P, E]) bool) {
+func (m *shardMapOf[K, V, P, E]) rangeShard(f func(k K, n *valueOf[K, V, P, E])) {
 	for _, head := range m.readSnapshot().m {
 		for n := head; n != nil; n = loadNext(n) {
-			if !n.live() {
-				continue
-			}
-			if !f(n.key, n) {
-				return
+			if n.live() {
+				f(n.key, n)
 			}
 		}
 	}
@@ -979,15 +954,11 @@ func (m *shardMapOf[K, V, P, E]) rangeShard(f func(k K, n *valueOf[K, V, P, E]) 
 // nodes, and calls f with the original key, value and expire of one readValue:
 // never another incarnation's payload, but val and expire are not a consistent
 // pair across an in-place overwrite of a live node.
-func (m *shardMapOf[K, V, P, E]) rangeShardVal(now int64, f func(k K, val V, exp int64) bool) {
+func (m *shardMapOf[K, V, P, E]) rangeShardVal(now int64, f func(k K, val V, exp int64)) {
 	for _, head := range m.readSnapshot().m {
 		for n := head; n != nil; n = loadNext(n) {
-			val, exp, ok := n.readValue()
-			if !ok || (exp > 0 && now > exp) {
-				continue
-			}
-			if !f(n.key, val, exp) {
-				return
+			if val, exp, ok := n.readValue(); ok && (exp <= 0 || now <= exp) {
+				f(n.key, val, exp)
 			}
 		}
 	}
