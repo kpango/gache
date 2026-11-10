@@ -14,7 +14,7 @@
 
 gache is the thinnest cache library for Go applications.
 
-It provides a **generic, type-safe, concurrent-safe in-memory cache** with TTL (time-to-live) support. gache uses a sharded architecture (4096 shards) to minimize lock contention, making it ideal for high-throughput, concurrent workloads. It outperforms `sync.Map`, [go-cache](https://github.com/patrickmn/go-cache), [bigcache](https://github.com/allegro/bigcache), [gcache](https://github.com/bluele/gcache), and [ttlcache](https://github.com/jellydator/ttlcache) in benchmarks while providing a richer feature set.
+It provides a **generic, type-safe, concurrent-safe in-memory cache** with TTL (time-to-live) support. gache uses a sharded architecture (4096 shards) to minimize lock contention, making it ideal for high-throughput, concurrent workloads. In the benchmark table below it is faster than [go-cache](https://github.com/patrickmn/go-cache), [bigcache](https://github.com/allegro/bigcache), [gcache](https://github.com/bluele/gcache), and [ttlcache](https://github.com/jellydator/ttlcache) in every row, and faster than `sync.Map` in all but the small-data read-only rows and two big-data NoTTL Set/Get rows (P1000 and P10000), where `sync.Map` is faster, while providing a richer feature set.
 
 ## Features
 
@@ -25,11 +25,11 @@ It provides a **generic, type-safe, concurrent-safe in-memory cache** with TTL (
 - **Expiration Hooks** – Register a callback that fires when entries expire.
 - **Serialization** – Export/import the cache to/from any `io.Writer`/`io.Reader` using gob encoding.
 - **Concurrent-Safe** – All operations are safe for use by multiple goroutines.
-- **Zero Dependencies for Core** – Only lightweight, well-maintained dependencies ([fastime](https://github.com/kpango/fastime), [xxh3](https://github.com/zeebo/xxh3)).
+- **Few Dependencies** – [fastime](https://github.com/kpango/fastime), [xxh3](https://github.com/zeebo/xxh3) (all builds except arm64) and [golang.org/x/sync](https://pkg.go.dev/golang.org/x/sync).
 
 ## Requirement
 
-Go 1.18 or later (generics support is required).
+Go 1.26.1 or later (see go.mod).
 
 ## Installation
 
@@ -116,7 +116,8 @@ func main() {
 
 	gc.Set("temp", "data")
 
-	// After ~5 seconds the hook prints: expired: key=temp val=data
+	// At the first sweep after the 5s TTL (about 6s in) the hook prints:
+	// expired: key=temp val=data
 	time.Sleep(time.Second * 8)
 
 	// Stop the background expiration daemon when done.
@@ -179,7 +180,8 @@ v2, ok := gc.Get(key2)
 v3, ok := gc.Get(key3)
 
 // Export the cache to a file.
-file, err := os.OpenFile("./gache-sample.gdb", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0755)
+path := "/tmp/gache-sample.gdb"
+file, err := os.OpenFile(path, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0o755)
 if err != nil {
 	log.Fatal(err)
 }
@@ -187,7 +189,7 @@ gc.Write(context.Background(), file)
 file.Close()
 
 // Import the cache from the file into a new instance.
-file, err = os.OpenFile("./gache-sample.gdb", os.O_RDONLY, 0755)
+file, err = os.OpenFile(path, os.O_RDONLY, 0o755)
 if err != nil {
 	log.Fatal(err)
 }
@@ -235,7 +237,7 @@ Below is a summary of the `Gache[V any]` interface. For full documentation see t
 | Method | Description |
 |--------|-------------|
 | `SetDefaultExpire(dur time.Duration) Gache[V]` | Change the default TTL. |
-| `StartExpired(ctx context.Context, dur time.Duration) Gache[V]` | Start a background daemon that removes expired entries at the given interval. |
+| `StartExpired(ctx context.Context, dur time.Duration) Gache[V]` | Start a background daemon that removes expired entries at the given interval and serves the expiration hook. `dur <= 0` starts no periodic sweep; the hook is still served. |
 | `DeleteExpired(ctx context.Context) uint64` | Manually remove all expired entries; returns the number removed. |
 | `Stop()` | Stop the background expiration daemon. |
 | `SetExpiredHook(f func(context.Context, string, V)) Gache[V]` | Register a function called when an entry expires. |
@@ -246,11 +248,11 @@ Below is a summary of the `Gache[V any]` interface. For full documentation see t
 
 | Method | Description |
 |--------|-------------|
-| `Range(ctx context.Context, f func(string, V, int64) bool) Gache[V]` | Iterate over all entries. Return `false` from `f` to stop early. |
+| `Range(ctx context.Context, f func(string, V, int64) bool) Gache[V]` | Iterate over all entries from several goroutines at once (see `WithMaxWorkers`). Returning `false` from `f` stops only that goroutine; use `WithMaxWorkers[V](1)` for a sequential walk that `false` stops entirely. |
 | `Keys(ctx context.Context) []string` | Return all keys currently in the cache. |
 | `Values(ctx context.Context) []V` | Return all values currently in the cache. |
 | `Len() int` | Return the number of entries (including expired but not yet cleaned). |
-| `Size() uintptr` | Return the approximate memory usage in bytes. |
+| `Size() uintptr` | Return an estimate of the memory usage in bytes, excluding key and value heap data. |
 
 ### Serialization
 
@@ -265,9 +267,10 @@ Below is a summary of the `Gache[V any]` interface. For full documentation see t
 
 | Option | Description |
 |--------|-------------|
-| `WithDefaultExpiration[V](dur time.Duration)` | Set the default TTL for the cache. |
+| `WithDefaultExpiration[V](dur time.Duration)` | Set the default TTL for the cache. `dur <= 0` (e.g. `gache.NoTTL`) disables expiry. |
 | `WithDefaultExpirationString[V](s string)` | Set the default TTL from a duration string (e.g. `"5m"`). |
-| `WithMaxKeyLength[V](n uint64)` | Limit the number of key bytes used for shard selection (default: 256). |
+| `WithMaxKeyLength[V](n uint64)` | Limit the number of key bytes used for shard selection (default: 256; `0` means no prefix limit, and keys longer than 64 bytes are still hashed from a 64-byte sample). |
+| `WithMaxWorkers[V](n int)` | Limit the goroutines of fan-out operations (`Range`, `DeleteExpired`, `Keys`, ...) to `min(GOMAXPROCS, n)` and the daemon's concurrent expiration hooks to `min(2*GOMAXPROCS, n)`; `n <= 0` lifts the limit (default: `2*NumCPU`). |
 | `WithExpiredHookFunc[V](f func(ctx, key, val))` | Register an expiration hook at construction time. |
 
 ## Benchmarks

@@ -13,7 +13,7 @@ SAFE_BRANCH := $(shell echo "$(CURRENT_BRANCH)" | tr '/' '-')
 SAFE_BASE := $(shell echo "$(BASE_BRANCH)" | tr '/' '-')
 XARGS_NO_RUN_IF_EMPTY := $(eval XARGS_NO_RUN_IF_EMPTY := $(shell xargs --version 2>/dev/null | head -1 | grep -qi gnu && echo -r))$(XARGS_NO_RUN_IF_EMPTY)
 
-GO_VERSION := 1.26.1
+GO_VERSION := 1.27.3
 GOPATH := $(eval GOPATH := $(shell go env GOPATH))$(GOPATH)
 GOLINES_MAX_WIDTH     ?= 200
 
@@ -152,9 +152,10 @@ $(WORKTREE_DIR)/$(BASE_BRANCH): | $(WORKTREE_DIR)
 
 sync-test-files: | $(WORKTREE_DIR)/$(BASE_BRANCH)
 	@echo "Copying changed test files to $(BASE_BRANCH)..."
-	@git diff --name-only $(BASE_BRANCH)...$(CURRENT_BRANCH) | grep -E '_test\.go$$' | while read -r file; do \
+	@git diff --no-renames --name-only $(BASE_BRANCH)...$(CURRENT_BRANCH) | grep -E '_test\.go$$' | while read -r file; do \
 		mkdir -p "$(WORKTREE_DIR)/$(BASE_BRANCH)/$$(dirname "$$file")"; \
-		if [ -f "$(ROOTDIR)/$$file" ]; then cp "$(ROOTDIR)/$$file" "$(WORKTREE_DIR)/$(BASE_BRANCH)/$$file"; fi; \
+		if [ -f "$(ROOTDIR)/$$file" ]; then cp "$(ROOTDIR)/$$file" "$(WORKTREE_DIR)/$(BASE_BRANCH)/$$file"; \
+		else rm -f -- "$(WORKTREE_DIR)/$(BASE_BRANCH)/$$file"; fi; \
 	done || true
 
 bench-compare: deps $(BENCH_DIR) sync-test-files
@@ -164,9 +165,9 @@ bench-compare: deps $(BENCH_DIR) sync-test-files
 	fi; \
 	echo "Comparing benchmarks: $(BASE_BRANCH) vs $(CURRENT_BRANCH)"; \
 	echo "Running benchmarks on $(CURRENT_BRANCH)..."; \
-	go test -count=5 -timeout=30m -run=NONE -bench=$(BENCH_TESTS) -benchmem ./... | tee $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BRANCH).log; \
+	go test -count=5 -timeout=60m -run=NONE -bench=$(BENCH_TESTS) -benchmem ./... | tee $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BRANCH).log; \
 	echo "Running benchmarks on $(BASE_BRANCH)..."; \
-	go test -C $(WORKTREE_DIR)/$(BASE_BRANCH) -count=5 -timeout=30m -run=NONE -bench=$(BENCH_TESTS) -benchmem ./... | tee $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BASE).log; \
+	go test -C $(WORKTREE_DIR)/$(BASE_BRANCH) -count=5 -timeout=60m -run=NONE -bench=$(BENCH_TESTS) -benchmem ./... | tee $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BASE).log; \
 	echo "Comparing results..."; \
 	command -v benchstat > /dev/null || (echo "Installing benchstat..." && go install golang.org/x/perf/cmd/benchstat@latest); \
 	$$(go env GOPATH)/bin/benchstat $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BASE).log $(ROOTDIR)/$(BENCH_DIR)/$(SAFE_BRANCH).log > $(ROOTDIR)/$(BENCH_DIR)/benchstat-$(SAFE_BASE)-$(SAFE_BRANCH); \
