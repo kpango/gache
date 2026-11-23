@@ -1815,3 +1815,39 @@ func BenchmarkCache_Matrix(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkMap_LoadPtrKey measures lock-free pointer-key lookups in Map[*int, int].
+func BenchmarkMap_LoadPtrKey(b *testing.B) {
+	const numKeys = 16
+	var m gache.Map[*int, int]
+	keys := make([]*int, numKeys)
+	for i := range keys {
+		k := new(int)
+		*k = i
+		keys[i] = k
+		m.Store(k, i)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.Run("Sequential", func(b *testing.B) {
+		for i := range b.N {
+			v, ok := m.Load(keys[i&(numKeys-1)])
+			if !ok || v != (i&(numKeys-1)) {
+				b.Fatalf("unexpected (%d, %v)", v, ok)
+			}
+		}
+	})
+	b.Run("Parallel", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				k := keys[i&(numKeys-1)]
+				v, ok := m.Load(k)
+				if !ok || v != (i&(numKeys-1)) {
+					b.Fatalf("unexpected (%d, %v)", v, ok)
+				}
+				i++
+			}
+		})
+	})
+}

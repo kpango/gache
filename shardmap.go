@@ -1,6 +1,7 @@
 package gache
 
 import (
+	"reflect"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -10,6 +11,15 @@ import (
 const (
 	wordSize    = unsafe.Sizeof(uintptr(0))
 	twoWordSize = wordSize * 2
+
+	shardReadMinCap     = 2
+	shardReadLoadFactor = 2
+	shardReadHashShift  = 12
+
+	wordHashSize    = 8
+	wordHashShiftLo = 16
+	wordHashShiftHi = 32
+	wordHashMul     = 0x9e3779b97f4a7c15
 )
 
 // value.state layout: [ generation | stPtr | st ], st being one of the values
@@ -113,10 +123,73 @@ type shardMapOf[K comparable, V any, P valPtrSlot[V], E expireSlot] struct {
 	mu      sync.Mutex
 }
 
+type readBucket[K comparable, V any, P valPtrSlot[V], E expireSlot] struct {
+	head *valueOf[K, V, P, E]
+	h    uint64
+}
+
 type readOnlyShardOf[K comparable, V any, P valPtrSlot[V], E expireSlot] struct {
-	m       map[uint64]*valueOf[K, V, P, E]
-	c       *atomic.Int64
-	amended bool
+	buckets     []readBucket[K, V, P, E]
+	c           *atomic.Int64
+	count       int
+	amended     bool
+	fastWordKey bool
+}
+
+func isFastWordKey[K comparable]() bool {
+	if unsafe.Sizeof(*new(K)) != wordHashSize || wordSize != wordHashSize {
+		return false
+	}
+	k := reflect.TypeFor[K]().Kind()
+	return k == reflect.Pointer || k == reflect.UnsafePointer || k == reflect.Chan ||
+		k == reflect.Int || k == reflect.Int64 || k == reflect.Uint || k == reflect.Uint64 || k == reflect.Uintptr
+}
+
+func hashWord(x uint64) uint64 {
+	x ^= x >> wordHashShiftLo
+	x *= wordHashMul
+	return x ^ (x >> wordHashShiftHi)
+}
+
+func (r *readOnlyShardOf[K, V, P, E]) lookup(h uint64) *valueOf[K, V, P, E] {
+	buckets := r.buckets
+	if len(buckets) == 0 {
+		return nil
+	}
+	mask := uint64(len(buckets) - 1) //nolint:gosec // len(buckets) >= shardReadMinCap (2), so len-1 >= 1
+	slot := (h ^ (h >> shardReadHashShift)) & mask
+	for {
+		b := buckets[slot]
+		if b.head == nil {
+			return nil
+		}
+		if b.h == h {
+			return b.head
+		}
+		slot = (slot + 1) & mask
+	}
+}
+
+func newReadBuckets[K comparable, V any, P valPtrSlot[V], E expireSlot](
+	dirty map[uint64]*valueOf[K, V, P, E],
+) []readBucket[K, V, P, E] {
+	if len(dirty) == 0 {
+		return nil
+	}
+	size := shardReadMinCap
+	for size < len(dirty)*shardReadLoadFactor {
+		size <<= 1
+	}
+	buckets := make([]readBucket[K, V, P, E], size)
+	mask := uint64(size - 1) //nolint:gosec // size >= shardReadMinCap (2), so size-1 is strictly positive
+	for h, head := range dirty {
+		slot := (h ^ (h >> shardReadHashShift)) & mask
+		for buckets[slot].head != nil {
+			slot = (slot + 1) & mask
+		}
+		buckets[slot] = readBucket[K, V, P, E]{head: head, h: h}
+	}
+	return buckets
 }
 
 func (m *shardMapOf[K, V, P, E]) counter() *atomic.Int64 {
@@ -145,15 +218,6 @@ func (m *shardMapOf[K, V, P, E]) loadReadOnly() readOnlyShardOf[K, V, P, E] {
 		return *p
 	}
 	return readOnlyShardOf[K, V, P, E]{}
-}
-
-// empty reports that the shard holds no key: the read snapshot is empty and dirty
-// adds nothing to it. Map checks it before hashing a key on the paths that can only
-// miss on an empty shard, so such a lookup costs no hash. Unlike sync.Map, a key
-// whose dynamic value is not hashable then misses instead of panicking.
-func (m *shardMapOf[K, V, P, E]) empty() bool {
-	read := m.loadReadOnly()
-	return len(read.m) == 0 && !read.amended
 }
 
 // value is BOTH the cache entry AND a hash-collision chain node. Nodes are
@@ -556,31 +620,32 @@ func valEqualPtr[V any](a, b *V) bool {
 // (each atomic, not a consistent pair across an in-place overwrite). ok is false
 // if the key is absent or tombstoned.
 func (m *shardMapOf[K, V, P, E]) loadValue(h uint64, k K) (val V, expire int64, ok bool) {
-	read := m.loadReadOnly()
-	if n := findNode(read.m[h], k); n != nil {
-		// First attempt of readValue's seqlock, inlined by hand: Get is the hot
-		// path and readValue is too big to inline. A nil valPtr means a tombstone
-		// ran after s was loaded, so the final state check fails; if that happens,
-		// or the node is not live, readValue below takes over.
-		if s := n.state.Load(); s&stMask == stLive {
-			if unsafe.Sizeof(val) == wordSize {
-				val = n.loadWord(s)
-			} else if vp := n.vp().Load(); vp != nil {
-				val = *vp
+	if p := m.read.Load(); p != nil {
+		if n := findNode(p.lookup(h), k); n != nil {
+			// First attempt of readValue's seqlock, inlined by hand: Get is the hot
+			// path and readValue is too big to inline. A nil valPtr means a tombstone
+			// ran after s was loaded, so the final state check fails; if that happens,
+			// or the node is not live, readValue below takes over.
+			if s := n.state.Load(); s&stMask == stLive {
+				if unsafe.Sizeof(val) == wordSize {
+					val = n.loadWord(s)
+				} else if vp := n.vp().Load(); vp != nil {
+					val = *vp
+				}
+				if expire = n.loadExpire(); n.state.Load() == s {
+					return val, expire, true
+				}
 			}
-			if expire = n.loadExpire(); n.state.Load() == s {
-				return val, expire, true
+			if v, e, ok := n.readValue(); ok {
+				return v, e, true
 			}
 		}
-		if v, e, ok := n.readValue(); ok {
-			return v, e, true
-		}
-	}
-	if read.amended {
-		n := m.lockSlow(h, k)
-		m.mu.Unlock()
-		if n != nil {
-			return n.readValue()
+		if p.amended {
+			n := m.lockSlow(h, k)
+			m.mu.Unlock()
+			if n != nil {
+				return n.readValue()
+			}
 		}
 	}
 	var zero V
@@ -595,7 +660,7 @@ func (m *shardMapOf[K, V, P, E]) loadValue(h uint64, k K) (val V, expire int64, 
 func (m *shardMapOf[K, V, P, E]) lockSlow(h uint64, k K) *valueOf[K, V, P, E] {
 	m.mu.Lock()
 	read := m.loadReadOnly()
-	if n := findNode(read.m[h], k); n != nil && n.live() {
+	if n := findNode(read.lookup(h), k); n != nil && n.live() {
 		return n
 	}
 	if read.amended {
@@ -612,7 +677,7 @@ func (m *shardMapOf[K, V, P, E]) lockSlow(h uint64, k K) *valueOf[K, V, P, E] {
 // node identity (e.g. expiration checks, in-place refresh).
 func (m *shardMapOf[K, V, P, E]) loadNode(h uint64, k K) (*valueOf[K, V, P, E], bool) {
 	read := m.loadReadOnly()
-	if n := findNode(read.m[h], k); n != nil && n.live() {
+	if n := findNode(read.lookup(h), k); n != nil && n.live() {
 		return n, true
 	}
 	if !read.amended {
@@ -630,7 +695,7 @@ func (m *shardMapOf[K, V, P, E]) loadNode(h uint64, k K) (*valueOf[K, V, P, E], 
 // a new key falls to the slow path, which holds m.mu.
 func (m *shardMapOf[K, V, P, E]) store(h uint64, k K, val V, expire int64) {
 	read := m.loadReadOnly()
-	if n := findNode(read.m[h], k); n != nil {
+	if n := findNode(read.lookup(h), k); n != nil {
 		if unsafe.Sizeof(val) != wordSize {
 			if vp := n.vp().Load(); vp != nil && n.live() && valEqualPtr(vp, &val) {
 				n.storeExpire(expire)
@@ -649,7 +714,7 @@ func (m *shardMapOf[K, V, P, E]) store(h uint64, k K, val V, expire int64) {
 // revived in place and an expunged one or a new key falls to upsertSlow.
 func (m *shardMapOf[K, V, P, E]) upsert(h uint64, k K, val V, expire int64, overwrite bool) (prev V, loaded bool) {
 	read := m.loadReadOnly()
-	if n := findNode(read.m[h], k); n != nil {
+	if n := findNode(read.lookup(h), k); n != nil {
 		if !overwrite {
 			if cur, _, ok := n.readValue(); ok {
 				return cur, true
@@ -720,14 +785,20 @@ func (m *shardMapOf[K, V, P, E]) headLocked(read readOnlyShardOf[K, V, P, E], h 
 	if read.amended {
 		return m.dirty[h]
 	}
-	return read.m[h]
+	return read.lookup(h)
 }
 
 // amendLocked rebuilds the dirty map and marks read, the non-amended snapshot
 // loaded under m.mu, as amended. Caller holds m.mu.
 func (m *shardMapOf[K, V, P, E]) amendLocked(read readOnlyShardOf[K, V, P, E]) {
 	m.dirtyLocked()
-	m.read.Store(&readOnlyShardOf[K, V, P, E]{m: read.m, amended: true, c: m.counterFor(read.c)})
+	m.read.Store(&readOnlyShardOf[K, V, P, E]{
+		buckets:     read.buckets,
+		count:       read.count,
+		amended:     true,
+		fastWordKey: isFastWordKey[K](),
+		c:           m.counterFor(read.c),
+	})
 }
 
 // loadAndDelete tombstones the live node for k and returns its value. Unlinking
@@ -746,7 +817,7 @@ func (m *shardMapOf[K, V, P, E]) loadAndDelete(h uint64, k K) (val V, loaded boo
 func (m *shardMapOf[K, V, P, E]) popIf(h uint64, k K, cond func(V) bool) (val V, expire int64, loaded bool) {
 	read := m.loadReadOnly()
 	// A dead node is skipped without taking its lock: nothing to pop.
-	if n := findNode(read.m[h], k); n != nil && n.live() {
+	if n := findNode(read.lookup(h), k); n != nil && n.live() {
 		if cond != nil {
 			// Lock-free reject so failing compare-and-delete loops do not
 			// serialize on the node lock; cond is evaluated again under it.
@@ -754,8 +825,8 @@ func (m *shardMapOf[K, V, P, E]) popIf(h uint64, k K, cond func(V) bool) (val V,
 				return val, 0, false
 			}
 		}
-		if val, expire, loaded, live := n.tombstoneIf(m.counterFor(read.c), cond, false); live {
-			return val, expire, loaded
+		if v, e, ok, live := n.tombstoneIf(m.counterFor(read.c), cond, false); live {
+			return v, e, ok
 		}
 	}
 	if !read.amended {
@@ -785,7 +856,7 @@ func (m *shardMapOf[K, V, P, E]) evictSlow(
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	read := m.loadReadOnly()
-	if n := findNode(read.m[h], k); n != nil {
+	if n := findNode(read.lookup(h), k); n != nil {
 		if v, e, ok, live := tombstone(n, m.counterFor(read.c), false); live {
 			return v, e, ok
 		}
@@ -820,9 +891,9 @@ func (m *shardMapOf[K, V, P, E]) evictSlow(
 // share evictSlow.
 func (m *shardMapOf[K, V, P, E]) expireIf(h uint64, k K, now int64) (val V, loaded bool) {
 	read := m.loadReadOnly()
-	if n := findNode(read.m[h], k); n != nil && n.live() {
-		if val, loaded, live := n.tombstoneIfExpired(m.counterFor(read.c), now, false); live {
-			return val, loaded
+	if n := findNode(read.lookup(h), k); n != nil && n.live() {
+		if v, ok, live := n.tombstoneIfExpired(m.counterFor(read.c), now, false); live {
+			return v, ok
 		}
 	}
 	if !read.amended {
@@ -874,7 +945,13 @@ func (m *shardMapOf[K, V, P, E]) missLocked() {
 
 // promoteLocked publishes the dirty map as the new read snapshot. Caller holds m.mu.
 func (m *shardMapOf[K, V, P, E]) promoteLocked() {
-	m.read.Store(&readOnlyShardOf[K, V, P, E]{m: m.dirty, c: m.counter()})
+	buckets := newReadBuckets(m.dirty)
+	m.read.Store(&readOnlyShardOf[K, V, P, E]{
+		buckets:     buckets,
+		count:       len(m.dirty),
+		fastWordKey: isFastWordKey[K](),
+		c:           m.counter(),
+	})
 	m.dirty = nil
 	m.misses = 0
 }
@@ -890,14 +967,15 @@ func (m *shardMapOf[K, V, P, E]) promoteLocked() {
 // standing on them).
 func (m *shardMapOf[K, V, P, E]) dirtyLocked() {
 	read := m.loadReadOnly()
-	m.dirty = make(map[uint64]*valueOf[K, V, P, E], len(read.m))
+	m.dirty = make(map[uint64]*valueOf[K, V, P, E], read.count)
 	m.chained = 0
-	for h, head := range read.m {
+	for _, b := range read.buckets {
+		head := b.head
 		for head != nil && head.tryExpunge() {
 			head = loadNext(head)
 		}
 		if head == nil {
-			// All nodes in this chain were dead; omit h from dirty so that upon
+			// All nodes in this chain were dead; omit b.h from dirty so that upon
 			// promotion the chain is dropped and reclaimed by GC.
 			continue
 		}
@@ -914,10 +992,10 @@ func (m *shardMapOf[K, V, P, E]) dirtyLocked() {
 		}
 
 		// Share head directly. NEVER allocate new value[K, V] nodes here.
-		// Preserving pointer identity across read.m and dirty is essential so that
+		// Preserving pointer identity across read.buckets and dirty is essential so that
 		// concurrent in-place overwrites and deletes on surviving keys operate on
 		// the exact same heap nodes.
-		m.dirty[h] = head
+		m.dirty[b.h] = head
 	}
 }
 
@@ -941,8 +1019,8 @@ func (m *shardMapOf[K, V, P, E]) readSnapshot() readOnlyShardOf[K, V, P, E] {
 // calls f with the original key and the node. If the snapshot is amended, it is
 // promoted first so all keys are observable.
 func (m *shardMapOf[K, V, P, E]) rangeShard(f func(k K, n *valueOf[K, V, P, E])) {
-	for _, head := range m.readSnapshot().m {
-		for n := head; n != nil; n = loadNext(n) {
+	for _, b := range m.readSnapshot().buckets {
+		for n := b.head; n != nil; n = loadNext(n) {
 			if n.live() {
 				f(n.key, n)
 			}
@@ -955,8 +1033,8 @@ func (m *shardMapOf[K, V, P, E]) rangeShard(f func(k K, n *valueOf[K, V, P, E]))
 // never another incarnation's payload, but val and expire are not a consistent
 // pair across an in-place overwrite of a live node.
 func (m *shardMapOf[K, V, P, E]) rangeShardVal(now int64, f func(k K, val V, exp int64)) {
-	for _, head := range m.readSnapshot().m {
-		for n := head; n != nil; n = loadNext(n) {
+	for _, b := range m.readSnapshot().buckets {
+		for n := b.head; n != nil; n = loadNext(n) {
 			if val, exp, ok := n.readValue(); ok && (exp <= 0 || now <= exp) {
 				f(n.key, val, exp)
 			}
@@ -973,8 +1051,8 @@ func (m *shardMapOf[K, V, P, E]) deleteExpired(now int64, onExpired func(K, V)) 
 	read := m.readSnapshot()
 	c := m.counterFor(read.c)
 	var count uint64
-	for _, head := range read.m {
-		for n := head; n != nil; n = loadNext(n) {
+	for _, b := range read.buckets {
+		for n := b.head; n != nil; n = loadNext(n) {
 			if !n.live() {
 				continue
 			}
@@ -1015,18 +1093,18 @@ func (m *shardMapOf[K, V, P, E]) length() int {
 
 func (m *shardMapOf[K, V, P, E]) clear() {
 	read := m.loadReadOnly()
-	if len(read.m) == 0 && !read.amended && m.length() == 0 {
+	if read.count == 0 && !read.amended && m.length() == 0 {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	read = m.loadReadOnly()
-	if len(read.m) == 0 && !read.amended && m.length() == 0 {
+	if read.count == 0 && !read.amended && m.length() == 0 {
 		return
 	}
 	c := new(atomic.Int64)
 	m.l.Store(c)
-	m.read.Store(&readOnlyShardOf[K, V, P, E]{c: c})
+	m.read.Store(&readOnlyShardOf[K, V, P, E]{fastWordKey: isFastWordKey[K](), c: c})
 	m.dirty = nil
 	m.misses = 0
 	m.chained = 0
@@ -1034,17 +1112,21 @@ func (m *shardMapOf[K, V, P, E]) clear() {
 
 func (m *shardMapOf[K, V, P, E]) initReserve(size int) {
 	m.mu.Lock()
-	if m.dirty == nil && len(m.loadReadOnly().m) == 0 {
+	if m.dirty == nil && m.loadReadOnly().count == 0 {
 		m.dirty = make(map[uint64]*valueOf[K, V, P, E], size)
-		m.read.Store(&readOnlyShardOf[K, V, P, E]{m: map[uint64]*valueOf[K, V, P, E]{}, amended: true, c: m.counter()})
+		m.read.Store(&readOnlyShardOf[K, V, P, E]{
+			amended:     true,
+			fastWordKey: isFastWordKey[K](),
+			c:           m.counter(),
+		})
 	}
 	m.mu.Unlock()
 }
 
 // size estimates the bytes owned by this shard: the shardMap struct, the length
 // counter, the read and dirty map structures, and the value[K, V] nodes. It takes
-// m.mu briefly and allocates nothing. Its cost is O(swiss directory) of the two
-// bucket maps (mapSize visits each directory entry once), not O(entries): the
+// m.mu briefly and allocates nothing. Its cost is O(swiss directory) of the dirty
+// map (mapSize visits each directory entry once), not O(entries): the
 // nodes are counted from the bucket count, not walked.
 //
 // Nodes are shared between read and dirty, so they are charged once, from the one
@@ -1086,9 +1168,11 @@ func (m *shardMapOf[K, V, P, E]) size() (size uintptr) {
 		size += allocSize(unsafe.Sizeof(readOnlyShardOf[K, V, P, E]{}), true)
 	}
 	read := m.loadReadOnly()
-	size += mapSizeScan(read.m, true)
+	if len(read.buckets) > 0 {
+		size += allocSize(uintptr(cap(read.buckets))*unsafe.Sizeof(readBucket[K, V, P, E]{}), true)
+	}
 	size += mapSizeScan(m.dirty, true)
-	buckets := len(read.m)
+	buckets := read.count
 	if m.dirty != nil {
 		buckets = len(m.dirty)
 	}
