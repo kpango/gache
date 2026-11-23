@@ -1609,3 +1609,193 @@ func TestMap_PointerValuesSurviveConcurrentGC(t *testing.T) {
 		},
 	)
 }
+
+func TestMap_LoadOrCompute(t *testing.T) {
+	t.Parallel()
+
+	t.Run("value", func(t *testing.T) {
+		t.Parallel()
+		var m gache.Map[string, int]
+		var calls int
+		got, loaded := m.LoadOrCompute("a", func() int {
+			calls++
+			return 42
+		})
+		if loaded || got != 42 || calls != 1 {
+			t.Fatalf("first LoadOrCompute = (%d, %v) calls=%d, want (42, false) calls=1", got, loaded, calls)
+		}
+		got, loaded = m.LoadOrCompute("a", func() int {
+			calls++
+			return 99
+		})
+		if !loaded || got != 42 || calls != 1 {
+			t.Fatalf("second LoadOrCompute = (%d, %v) calls=%d, want (42, true) calls=1", got, loaded, calls)
+		}
+	})
+
+	t.Run("pointer and nil compute", func(t *testing.T) {
+		t.Parallel()
+		var m gache.Map[string, int]
+		if got, loaded := m.LoadOrComputePointer("nil", func() *int { return nil }); loaded || got != nil {
+			t.Fatalf("nil compute = (%v, %v), want (nil, false)", got, loaded)
+		}
+		if m.Len() != 0 {
+			t.Fatalf("Len after nil compute = %d, want 0", m.Len())
+		}
+		v1 := new(int)
+		*v1 = 7
+		got, loaded := m.LoadOrComputePointer("k", func() *int { return v1 })
+		if loaded || got != v1 {
+			t.Fatalf("first LoadOrComputePointer = (%p, %v), want (%p, false)", got, loaded, v1)
+		}
+		got, loaded = m.LoadOrComputePointer("k", func() *int {
+			t.Fatal("compute must not run on hit")
+			return nil
+		})
+		if !loaded || got != v1 {
+			t.Fatalf("second LoadOrComputePointer = (%p, %v), want (%p, true)", got, loaded, v1)
+		}
+	})
+
+	t.Run("concurrent winner shared", func(t *testing.T) {
+		t.Parallel()
+		const goroutines = 32
+		var m gache.Map[string, int]
+		var wg sync.WaitGroup
+		results := make([]int, goroutines)
+		loadeds := make([]bool, goroutines)
+		for i := range goroutines {
+			id := i + 1
+			wg.Go(func() {
+				results[i], loadeds[i] = m.LoadOrCompute("k", func() int { return id })
+			})
+		}
+		wg.Wait()
+		win, ok := m.Load("k")
+		if !ok {
+			t.Fatal("key missing after concurrent LoadOrCompute")
+		}
+		winners := 0
+		for i := range goroutines {
+			if results[i] != win {
+				t.Fatalf("goroutine %d got %d, want winning value %d", i, results[i], win)
+			}
+			if !loadeds[i] {
+				winners++
+			}
+		}
+		if winners != 1 {
+			t.Fatalf("winners = %d, want 1", winners)
+		}
+	})
+}
+
+func TestMap_DeleteFunc(t *testing.T) {
+	t.Parallel()
+
+	t.Run("partial and full", func(t *testing.T) {
+		t.Parallel()
+		var m gache.Map[int, string]
+		if got := m.DeleteFunc(func(int, string) bool { return true }); got != 0 {
+			t.Fatalf("DeleteFunc on empty = %d, want 0", got)
+		}
+		for i := range 20 {
+			m.Store(i, fmt.Sprintf("v%d", i))
+		}
+		removed := m.DeleteFunc(func(k int, _ string) bool { return k%2 == 0 })
+		if removed != 10 || m.Len() != 10 {
+			t.Fatalf("removed=%d Len=%d, want 10 and 10", removed, m.Len())
+		}
+		for i := range 20 {
+			_, ok := m.Load(i)
+			if ok != (i%2 != 0) {
+				t.Fatalf("Load(%d) = %v, want %v", i, ok, i%2 != 0)
+			}
+		}
+		removed = m.DeleteFuncPointer(func(k int, p *string) bool {
+			return k == 1 && *p == "v1"
+		})
+		if removed != 1 || m.Len() != 9 {
+			t.Fatalf("DeleteFuncPointer removed=%d Len=%d, want 1 and 9", removed, m.Len())
+		}
+	})
+
+	t.Run("skip overwritten during callback and allow reentry", func(t *testing.T) {
+		t.Parallel()
+		var m gache.Map[string, int]
+		m.Store("k", 1)
+		removed := m.DeleteFunc(func(k string, v int) bool {
+			if cur, ok := m.Load(k); !ok || cur != v {
+				t.Errorf("Load inside predicate = (%d, %v), want (%d, true)", cur, ok, v)
+			}
+			m.Store(k, 2)
+			return true
+		})
+		if removed != 0 {
+			t.Fatalf("removed = %d, want 0 when value was overwritten before tombstone", removed)
+		}
+		if cur, ok := m.Load("k"); !ok || cur != 2 {
+			t.Fatalf("after overwritten DeleteFunc Load = (%d, %v), want (2, true)", cur, ok)
+		}
+	})
+}
+
+func TestMap_FastWordKeyTypes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("pointer identity", func(t *testing.T) {
+		t.Parallel()
+		var m gache.Map[*int, int]
+		k1, k2 := new(int), new(int)
+		*k1, *k2 = 1, 1
+		m.Store(k1, 10)
+		m.Range(func(*int, int) bool { return true }) // promote to read buckets
+		if v, ok := m.Load(k1); !ok || v != 10 {
+			t.Fatalf("Load(k1) = (%d, %v), want (10, true)", v, ok)
+		}
+		if _, ok := m.Load(k2); ok {
+			t.Fatal("distinct pointer k2 hit k1's entry")
+		}
+		if v, loaded := m.LoadAndDelete(k1); !loaded || v != 10 || m.Len() != 0 {
+			t.Fatalf("LoadAndDelete(k1) = (%d, %v) Len=%d, want (10, true) 0", v, loaded, m.Len())
+		}
+	})
+
+	t.Run("uint64 and int", func(t *testing.T) {
+		t.Parallel()
+		var m gache.Map[uint64, int]
+		for i := range uint64(32) {
+			m.Store(i, int(i*2))
+		}
+		m.Range(func(uint64, int) bool { return true })
+		for i := range uint64(32) {
+			if v, ok := m.Load(i); !ok || v != int(i*2) {
+				t.Fatalf("Load(%d) = (%d, %v), want (%d, true)", i, v, ok, i*2)
+			}
+		}
+	})
+
+	t.Run("float64 signed zero fallback", func(t *testing.T) {
+		t.Parallel()
+		var m gache.Map[float64, string]
+		posZero := 0.0
+		negZero := -posZero
+		m.Store(posZero, "zero")
+		m.Range(func(float64, string) bool { return true })
+		if v, ok := m.Load(negZero); !ok || v != "zero" {
+			t.Fatalf("Load(-0.0) = (%q, %v), want (\"zero\", true)", v, ok)
+		}
+	})
+
+	t.Run("pair struct fallback", func(t *testing.T) {
+		t.Parallel()
+		type pair struct{ a, b int32 }
+		var m gache.Map[pair, int]
+		k := pair{a: 3, b: 4}
+		m.Store(k, 7)
+		m.Range(func(pair, int) bool { return true })
+		if v, ok := m.Load(k); !ok || v != 7 {
+			t.Fatalf("Load(pair) = (%d, %v), want (7, true)", v, ok)
+		}
+	})
+}

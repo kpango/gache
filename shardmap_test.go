@@ -853,7 +853,8 @@ func TestShardMap_ReviveToOwnValueDoesNotAllocate(t *testing.T) {
 	sm := &shardMap[string, string]{}
 	sm.store(1, "k", v, 0)
 	sm.readSnapshot()
-	n := findNode(sm.loadReadOnly().m[1], "k")
+	r := sm.loadReadOnly()
+	n := findNode(r.lookup(1), "k")
 
 	allocs := testing.AllocsPerRun(100, func() {
 		sm.loadAndDelete(1, "k")
@@ -892,7 +893,8 @@ func TestShardMap_StoreSameValueRevivesNodeBeingTombstoned(t *testing.T) {
 	sm := &shardMap[string, string]{}
 	sm.store(1, "k", v, 0)
 	sm.readSnapshot()
-	n := findNode(sm.loadReadOnly().m[1], "k")
+	r := sm.loadReadOnly()
+	n := findNode(r.lookup(1), "k")
 	n.state.Store(n.state.Load()&^stMask | stDeleted) // the window: state moved, valPtr not yet cleared
 	if n.vp().Load() == nil {
 		t.Fatal("test setup: valPtr cleared")
@@ -1114,7 +1116,7 @@ func TestShardMap_HighChurnHashCollisions(t *testing.T) {
 	totalTombstones := 0
 	totalLive := 0
 	for h := range uint64(numHashes) {
-		head := read.m[h]
+		head := read.lookup(h)
 		chainLen := 0
 		for n := head; n != nil; n = n.next {
 			chainLen++

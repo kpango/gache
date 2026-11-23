@@ -885,8 +885,8 @@ func (g *gache[V]) loop(ctx context.Context, f func(string, *value[string, V]) b
 			if cancelable && j&63 == 0 && ctx.Err() != nil {
 				return 0
 			}
-			for _, head := range shard.readSnapshot().m {
-				for n := head; n != nil; n = loadNext(n) {
+			for _, b := range shard.readSnapshot().buckets {
+				for n := b.head; n != nil; n = loadNext(n) {
 					if !n.live() {
 						continue
 					}

@@ -32,6 +32,7 @@ package gache
 import (
 	"hash/maphash"
 	"reflect"
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -44,13 +45,76 @@ type Map[K comparable, V any] struct {
 	m shardMapOf[K, *V, struct{}, struct{}]
 }
 
+func (m *Map[K, V]) hashKeyFrom(p *readOnlyShardOf[K, *V, struct{}, struct{}], key K) uint64 {
+	if unsafe.Sizeof(key) == wordHashSize && p.fastWordKey {
+		return hashWord(*(*uint64)(unsafe.Pointer(&key))) //nolint:gosec // read-only hash of 64-bit word key (pointer/int/uint)
+	}
+	return maphash.Comparable(hashSeed, key)
+}
+
+func (m *Map[K, V]) hashKey(key K) uint64 {
+	if unsafe.Sizeof(key) == wordHashSize {
+		if p := m.m.read.Load(); p != nil {
+			if p.fastWordKey {
+				return hashWord(*(*uint64)(unsafe.Pointer(&key))) //nolint:gosec // read-only hash of 64-bit word key (pointer/int/uint)
+			}
+			return maphash.Comparable(hashSeed, key)
+		}
+		if isFastWordKey[K]() {
+			return hashWord(*(*uint64)(unsafe.Pointer(&key))) //nolint:gosec // read-only hash of 64-bit word key (pointer/int/uint)
+		}
+	}
+	return maphash.Comparable(hashSeed, key)
+}
+
 // LoadPointer returns the pointer stored for key.
 func (m *Map[K, V]) LoadPointer(key K) (value *V, ok bool) {
-	if m.m.empty() {
+	p := m.m.read.Load()
+	if p == nil {
 		return nil, false
 	}
-	value, _, ok = m.m.loadValue(maphash.Comparable(hashSeed, key), key)
-	return value, ok
+	buckets := p.buckets
+	if len(buckets) == 0 {
+		if !p.amended {
+			return nil, false
+		}
+		return m.loadPointerSlow(m.hashKeyFrom(p, key), key)
+	}
+	h := m.hashKeyFrom(p, key)
+	mask := uint64(len(buckets) - 1) //nolint:gosec // len(buckets) >= shardReadMinCap (2), so len-1 >= 1
+	slot := (h ^ (h >> shardReadHashShift)) & mask
+	for {
+		b := buckets[slot]
+		if b.head == nil {
+			break
+		}
+		if b.h == h {
+			for n := b.head; n != nil; n = loadNext(n) {
+				if n.key == key {
+					if v := (*V)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&n.val)))); v != nil { //nolint:gosec // atomic pointer load of word-sized *V payload
+						return v, true
+					}
+					break
+				}
+			}
+			break
+		}
+		slot = (slot + 1) & mask
+	}
+	if p.amended {
+		return m.loadPointerSlow(h, key)
+	}
+	return nil, false
+}
+
+func (m *Map[K, V]) loadPointerSlow(h uint64, key K) (*V, bool) {
+	n := m.m.lockSlow(h, key)
+	m.m.mu.Unlock()
+	if n != nil {
+		v, _, ok := n.readValue()
+		return v, ok
+	}
+	return nil, false
 }
 
 // Load returns the value stored for key.
@@ -73,7 +137,7 @@ func (m *Map[K, V]) StorePointer(key K, value *V) {
 		m.LoadAndDeletePointer(key)
 		return
 	}
-	m.m.store(maphash.Comparable(hashSeed, key), key, value, 0)
+	m.m.store(m.hashKey(key), key, value, 0)
 }
 
 // Clear removes every entry.
@@ -94,7 +158,7 @@ func (m *Map[K, V]) SwapPointer(key K, value *V) (previous *V, loaded bool) {
 	if value == nil {
 		return m.LoadAndDeletePointer(key)
 	}
-	return m.m.upsert(maphash.Comparable(hashSeed, key), key, value, 0, true)
+	return m.m.upsert(m.hashKey(key), key, value, 0, true)
 }
 
 // LoadOrStorePointer returns the existing pointer for key if present,
@@ -104,7 +168,33 @@ func (m *Map[K, V]) LoadOrStorePointer(key K, value *V) (actual *V, loaded bool)
 	if value == nil {
 		return m.LoadPointer(key)
 	}
-	return m.m.loadOrStore(maphash.Comparable(hashSeed, key), key, value, 0)
+	return m.m.loadOrStore(m.hashKey(key), key, value, 0)
+}
+
+// LoadOrCompute returns the existing value for key if present; otherwise it
+// invokes compute once (outside the map lock), stores the returned value with
+// LoadOrStore, and returns the winning value and loaded.
+func (m *Map[K, V]) LoadOrCompute(key K, compute func() V) (actual V, loaded bool) {
+	if p, ok := m.LoadPointer(key); ok {
+		return *p, true
+	}
+	val := compute()
+	p, loaded := m.LoadOrStorePointer(key, &val)
+	return *p, loaded
+}
+
+// LoadOrComputePointer returns the existing pointer for key if present;
+// otherwise it invokes compute (outside the map lock) and stores the returned
+// pointer with LoadOrStorePointer. If compute returns nil, nothing is stored
+// and the current entry (if any) is loaded.
+func (m *Map[K, V]) LoadOrComputePointer(key K, compute func() *V) (actual *V, loaded bool) {
+	if p, ok := m.LoadPointer(key); ok {
+		return p, true
+	}
+	if val := compute(); val != nil {
+		return m.LoadOrStorePointer(key, val)
+	}
+	return m.LoadPointer(key)
 }
 
 // LoadAndDelete deletes key and returns its previous value.
@@ -118,15 +208,37 @@ func (m *Map[K, V]) LoadAndDelete(key K) (value V, loaded bool) {
 
 // LoadAndDeletePointer deletes key and returns its previous pointer.
 func (m *Map[K, V]) LoadAndDeletePointer(key K) (value *V, loaded bool) {
-	if m.m.empty() {
+	p := m.m.read.Load()
+	if p == nil || (p.count == 0 && !p.amended) {
 		return nil, false
 	}
-	return m.m.loadAndDelete(maphash.Comparable(hashSeed, key), key)
+	return m.m.loadAndDelete(m.hashKeyFrom(p, key), key)
 }
 
 // Delete removes key.
 func (m *Map[K, V]) Delete(key K) {
 	m.LoadAndDeletePointer(key)
+}
+
+// DeleteFunc deletes each entry for which fn returns true and returns the
+// number of deleted entries.
+func (m *Map[K, V]) DeleteFunc(fn func(key K, value V) bool) int {
+	return m.DeleteFuncPointer(func(k K, p *V) bool {
+		return fn(k, *p)
+	})
+}
+
+// DeleteFuncPointer deletes each entry for which fn returns true and returns the
+// number of deleted entries.
+func (m *Map[K, V]) DeleteFuncPointer(fn func(key K, value *V) bool) int {
+	removed := 0
+	m.RangePointer(func(k K, p *V) bool {
+		if fn(k, p) && m.CompareAndSwapPointer(k, p, nil) {
+			removed++
+		}
+		return true
+	})
+	return removed
 }
 
 // Swap stores value for key and returns the previous value.
@@ -141,7 +253,7 @@ func (m *Map[K, V]) Swap(key K, value V) (previous V, loaded bool) {
 // CompareAndSwap replaces the value for key with new if the current value is
 // reflect.DeepEqual to old.
 func (m *Map[K, V]) CompareAndSwap(key K, old, new V) (swapped bool) {
-	n, ok := m.m.loadNode(maphash.Comparable(hashSeed, key), key)
+	n, ok := m.m.loadNode(m.hashKey(key), key)
 	if !ok {
 		return false
 	}
@@ -155,7 +267,7 @@ func (m *Map[K, V]) CompareAndSwap(key K, old, new V) (swapped bool) {
 // CompareAndSwapPointer replaces the pointer for key with new if the current
 // pointer is old (identity, not content). A nil new deletes key.
 func (m *Map[K, V]) CompareAndSwapPointer(key K, old, new *V) (swapped bool) {
-	h := maphash.Comparable(hashSeed, key)
+	h := m.hashKey(key)
 	if new == nil {
 		_, _, swapped = m.m.popIf(h, key, func(p *V) bool { return p == old })
 		return swapped
@@ -172,7 +284,7 @@ func (m *Map[K, V]) CompareAndSwapPointer(key K, old, new *V) (swapped bool) {
 
 // CompareAndDelete deletes key if the current value is reflect.DeepEqual to old.
 func (m *Map[K, V]) CompareAndDelete(key K, old V) (deleted bool) {
-	_, _, deleted = m.m.popIf(maphash.Comparable(hashSeed, key), key, func(p *V) bool {
+	_, _, deleted = m.m.popIf(m.hashKey(key), key, func(p *V) bool {
 		return reflect.DeepEqual(*p, old)
 	})
 	return deleted
@@ -183,8 +295,8 @@ func (m *Map[K, V]) CompareAndDelete(key K, old V) (deleted bool) {
 // per entry, +7.4% on BenchmarkMap_Range (benchstat, interleaved A/B, 2026-11-09,
 // mission gache-critical-path-slim).
 func (m *Map[K, V]) Range(f func(key K, value V) bool) {
-	for _, head := range m.m.readSnapshot().m {
-		for n := head; n != nil; n = loadNext(n) {
+	for _, b := range m.m.readSnapshot().buckets {
+		for n := b.head; n != nil; n = loadNext(n) {
 			if p, ok := n.loadLive(); ok && !f(n.key, *p) {
 				return
 			}
@@ -194,8 +306,8 @@ func (m *Map[K, V]) Range(f func(key K, value V) bool) {
 
 // RangePointer is Range with pointer values.
 func (m *Map[K, V]) RangePointer(f func(key K, value *V) bool) {
-	for _, head := range m.m.readSnapshot().m {
-		for n := head; n != nil; n = loadNext(n) {
+	for _, b := range m.m.readSnapshot().buckets {
+		for n := b.head; n != nil; n = loadNext(n) {
 			if p, ok := n.loadLive(); ok && !f(n.key, p) {
 				return
 			}

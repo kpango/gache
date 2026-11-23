@@ -137,10 +137,10 @@ func checkExpungeInvariant[K comparable, V any](t testing.TB, m *shardMap[K, V])
 	defer m.mu.Unlock()
 	read := m.loadReadOnly()
 	if m.dirty == nil {
-		for h, head := range read.m {
-			for n := head; n != nil; n = loadNext(n) {
+		for _, b := range read.buckets {
+			for n := b.head; n != nil; n = loadNext(n) {
 				if stateOf(n) == stExpunged {
-					t.Errorf("bucket %#x: expunged node %v reachable from a read snapshot without dirty", h, n.key)
+					t.Errorf("bucket %#x: expunged node %v reachable from a read snapshot without dirty", b.h, n.key)
 				}
 			}
 		}
@@ -155,10 +155,10 @@ func checkExpungeInvariant[K comparable, V any](t testing.TB, m *shardMap[K, V])
 			}
 		}
 	}
-	for h, head := range read.m {
-		for n := head; n != nil; n = loadNext(n) {
+	for _, b := range read.buckets {
+		for n := b.head; n != nil; n = loadNext(n) {
 			if _, ok := inDirty[n]; !ok && stateOf(n) != stExpunged {
-				t.Errorf("bucket %#x: non-expunged node %v reachable from read but not from dirty", h, n.key)
+				t.Errorf("bucket %#x: non-expunged node %v reachable from read but not from dirty", b.h, n.key)
 			}
 		}
 	}

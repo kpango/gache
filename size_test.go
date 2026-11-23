@@ -849,21 +849,23 @@ func referenceNodes[K comparable, V any](t *testing.T, m *shardMap[K, V]) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	seen := make(map[*value[K, V]]struct{})
-	walk := func(heads map[uint64]*value[K, V], inDirty bool) {
-		for _, head := range heads {
-			for n := head; n != nil; n = loadNext(n) {
-				if n.state.Load()&stMask == stExpunged {
-					if inDirty {
-						t.Fatalf("expunged node %v reachable from dirty", n.key)
-					}
-					continue
+	walkChain := func(head *value[K, V], inDirty bool) {
+		for n := head; n != nil; n = loadNext(n) {
+			if n.state.Load()&stMask == stExpunged {
+				if inDirty {
+					t.Fatalf("expunged node %v reachable from dirty", n.key)
 				}
-				seen[n] = struct{}{}
+				continue
 			}
+			seen[n] = struct{}{}
 		}
 	}
-	walk(m.loadReadOnly().m, false)
-	walk(m.dirty, true)
+	for _, b := range m.loadReadOnly().buckets {
+		walkChain(b.head, false)
+	}
+	for _, head := range m.dirty {
+		walkChain(head, true)
+	}
 	return len(seen)
 }
 
@@ -873,7 +875,11 @@ func sizeNodes[K comparable, V any](t *testing.T, m *shardMap[K, V]) int {
 	t.Helper()
 	got := m.size()
 	m.mu.Lock()
-	fixed := unsafe.Sizeof(*m) + mapSize(m.loadReadOnly().m) + mapSize(m.dirty)
+	read := m.loadReadOnly()
+	fixed := unsafe.Sizeof(*m) + mapSize(m.dirty)
+	if len(read.buckets) > 0 {
+		fixed += allocSize(uintptr(cap(read.buckets))*unsafe.Sizeof(readBucket[K, V, atomic.Pointer[V], atomic.Int64]{}), true)
+	}
 	if m.read.Load() != nil {
 		fixed += allocSize(unsafe.Sizeof(readOnlyShardOf[K, V, atomic.Pointer[V], atomic.Int64]{}), true)
 	}
@@ -1068,9 +1074,11 @@ func expectedMapSize[K comparable, V any](m *Map[K, V]) uintptr {
 	buckets := len(sm.dirty)
 	if ro != nil {
 		size += allocSize(unsafe.Sizeof(readOnlyShardOf[K, *V, struct{}, struct{}]{}), true)
-		size += mapSize(ro.m)
+		if len(ro.buckets) > 0 {
+			size += allocSize(uintptr(cap(ro.buckets))*unsafe.Sizeof(readBucket[K, *V, struct{}, struct{}]{}), true)
+		}
 		if sm.dirty == nil {
-			buckets = len(ro.m)
+			buckets = ro.count
 		}
 	}
 	size += uintptr(buckets+sm.chained) * allocSize(unsafe.Sizeof(valueOf[K, *V, struct{}, struct{}]{}), true)
@@ -1179,14 +1187,24 @@ func TestSize_GacheMonotonicAndConcurrent(t *testing.T) {
 			t.Fatalf("expected size (%d) > baseline (%d) after 50 insertions", sizeAfterInserts, baseSize)
 		}
 
-		// Overwrite the same 50 entries in place: node count does not change, size should remain identical
+		// Overwrite the same 50 entries: unpromoted single-entry shards may promote
+		// from dirty (184B SwissTable) to compact flat read buckets (32B), so
+		// size does not grow; a second overwrite pass on promoted shards is exact.
 		for i := range 50 {
 			gc.Set(fmt.Sprintf("key_%d", i), "updated_value")
 		}
 		sizeAfterOverwrites := gc.Size()
-		if sizeAfterOverwrites != sizeAfterInserts {
-			t.Fatalf("expected size to remain identical after in-place overwrites: before=%d, after=%d",
-				sizeAfterInserts, sizeAfterOverwrites)
+		if sizeAfterOverwrites > sizeAfterInserts || sizeAfterOverwrites <= baseSize {
+			t.Fatalf("expected sizeAfterOverwrites in (%d, %d], got %d",
+				baseSize, sizeAfterInserts, sizeAfterOverwrites)
+		}
+		for i := range 50 {
+			gc.Set(fmt.Sprintf("key_%d", i), "updated_value_2")
+		}
+		sizeAfterSecondOverwrites := gc.Size()
+		if sizeAfterSecondOverwrites != sizeAfterOverwrites {
+			t.Fatalf("expected size to remain identical on subsequent in-place overwrites: before=%d, after=%d",
+				sizeAfterOverwrites, sizeAfterSecondOverwrites)
 		}
 
 		// Clear() resets the cache: size should decrease back toward baseline
